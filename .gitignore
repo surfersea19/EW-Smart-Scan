@@ -25,3 +25,4 @@ Thumbs.db
 
 # Nested Git repositories
 **/.git/
+**/node_modules/
