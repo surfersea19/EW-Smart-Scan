@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ew-smart-scan-backend"
+version = "0.1.0"
+description = "Person 1's scope for the DRDO Smart Scan Strategy project: RF environment, emitter simulator, virtual receiver, simulation engine."
+requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["backend*"]

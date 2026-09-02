@@ -1,0 +1,27 @@
+# Python virtual environments
+**/.venv/
+
+# Python cache
+**/__pycache__/
+*.py[cod]
+
+# Pytest
+**/.pytest_cache/
+
+# Build/package artifacts
+**/*.egg-info/
+**/dist/
+**/build/
+
+# Generated ML models
+**/backend/prediction/models/saved/
+
+# IDE
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Nested Git repositories
+**/.git/
