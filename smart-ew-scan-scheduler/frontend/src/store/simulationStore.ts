@@ -18,7 +18,7 @@ interface SimulationStore {
   predictions: WSDelta["top_predictions"];
   nextBand: number | null;
   schedulerReason: string | null;
-  tracks: WSDelta["tracks"];
+  predictedActivity: WSDelta["predicted_activity"];
   metrics: Metrics;
   history: HistoryPoint[];
 
@@ -46,7 +46,7 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
   connected: false,
   running: false,
   scenario: {
-    num_bands: 100,
+    num_bands: 180, // matches Person 1's real SpectrumConfig default; overwritten on reset regardless
     num_emitters: 5,
     duration: 300,
     noise_level: "medium",
@@ -59,7 +59,7 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
   predictions: [],
   nextBand: null,
   schedulerReason: null,
-  tracks: [],
+  predictedActivity: [],
   metrics: emptyMetrics,
   history: [],
 
@@ -76,8 +76,14 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
       predictions: d.top_predictions,
       nextBand: d.next_band,
       schedulerReason: d.scheduler_reason ?? null,
-      tracks: d.tracks,
+      predictedActivity: d.predicted_activity,
       metrics: d.metrics,
+      // BUG FIX: reconcile "running" from the backend's own report on
+      // every delta -- otherwise, when the backend auto-stops after
+      // reaching ScenarioConfig.duration, the frontend's local flag
+      // (only ever set by explicit start()/stop() button clicks) stays
+      // stuck on true even though the simulation has actually stopped.
+      running: d.running,
       history: [
         ...state.history,
         { time: d.time, band: d.current_band, detected: d.detected },
@@ -93,7 +99,7 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
       predictions: [],
       nextBand: null,
       schedulerReason: null,
-      tracks: [],
+      predictedActivity: [],
       metrics: emptyMetrics,
     }),
 }));

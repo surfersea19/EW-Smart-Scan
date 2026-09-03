@@ -26,7 +26,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify(scenario),
     }),
-  getState: () => request("/simulation/state"),
+  getState: () => request<{ scenario: ScenarioConfig }>("/simulation/state"),
   runComparison: (scenario: ScenarioConfig) =>
     request<ComparisonResult>("/comparison", {
       method: "POST",

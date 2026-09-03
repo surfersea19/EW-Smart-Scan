@@ -1,4 +1,8 @@
-export type Strategy = "sequential" | "random" | "priority" | "smart_ml";
+// "priority" removed: Person 2 does not implement a distinct
+// priority-based scheduler (see ew_scheduler/backend/scheduler/) --
+// keeping it here would let the UI request a strategy the backend
+// cannot provide.
+export type Strategy = "sequential" | "random" | "smart_ml";
 export type NoiseLevel = "low" | "medium" | "high";
 
 export interface ScenarioConfig {
@@ -7,6 +11,7 @@ export interface ScenarioConfig {
   duration: number;
   noise_level: NoiseLevel;
   strategy: Strategy;
+  seed?: number;
 }
 
 export interface BandPrediction {
@@ -14,11 +19,16 @@ export interface BandPrediction {
   probability: number;
 }
 
-export interface TrackInfo {
-  track_id: string;
-  emitter_type: string;
-  current_band: number | null;
-  confidence: number;
+// Previously named TrackInfo. Renamed because Person 2's predictor does
+// not perform persistent multi-target tracking -- it produces a fresh
+// per-band probability every tick, with no track-ID continuity across
+// ticks. `rank` is only this tick's ordinal position (1 = current top
+// prediction), not a stable identifier for a followed entity, and the
+// band it points to can change tick to tick.
+export interface PredictedActivity {
+  rank: number;
+  band: number;
+  probability: number;
 }
 
 export interface Metrics {
@@ -33,6 +43,14 @@ export interface Metrics {
 }
 
 // Matches backend WSDelta exactly -- this IS the WebSocket contract.
+//
+// NOTE on next_band: Person 1's real SimulationEngine chooses a band and
+// scans it in the same atomic call (see simulation_engine.py) -- there
+// is no observable moment where a decision exists before its execution.
+// `next_band` therefore reflects THIS tick's chosen band (== current_band),
+// not a genuine look-ahead. See SchedulerDecision.tsx, relabeled to
+// describe why this tick's band was picked rather than promising a
+// preview of the future.
 export interface WSDelta {
   time: number;
   current_band: number | null;
@@ -41,8 +59,13 @@ export interface WSDelta {
   top_predictions: BandPrediction[];
   next_band: number | null;
   scheduler_reason?: string | null;
-  tracks: TrackInfo[];
+  predicted_activity: PredictedActivity[];
   metrics: Metrics;
+  running: boolean;
+  // Added so the frontend learns immediately when the backend auto-stops
+  // after ScenarioConfig.duration is reached -- without this, "running"
+  // only ever changed in response to explicit start()/stop() clicks and
+  // could go stale after an automatic stop.
 }
 
 export interface ComparisonResult {
