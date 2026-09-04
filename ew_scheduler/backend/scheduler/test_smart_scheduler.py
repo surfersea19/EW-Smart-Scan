@@ -20,12 +20,148 @@ class MockPredictor:
     def __init__(self, probabilities: dict[int, float] = None, default_prob: float = 0.3861):
         self.probabilities = probabilities or {}
         self.default_prob = default_prob
+        self.predict_all_calls = 0
 
     def predict_band(self, band: int, history_manager, current_time: int) -> float:
         return self.probabilities.get(band, self.default_prob)
 
     def predict_all_bands(self, bands: list[int], history_manager, current_time: int) -> dict[int, float]:
+        self.predict_all_calls += 1
         return {b: self.predict_band(b, history_manager, current_time) for b in bands}
+
+
+def complete_cold_start(scheduler, bands, history_manager, current_time=0):
+    """Advance a scheduler to its unchanged, post-cold-start behavior."""
+    return [
+        scheduler.select_band(bands, history_manager, current_time + i)
+        for i in range(len(bands))
+    ]
+
+
+# ======================================================================
+# COLD-START POLICY B REGRESSION TESTS
+# ======================================================================
+
+def test_cold_start_first_thirty_decisions_are_unique():
+    bands = list(range(180))
+    scheduler = SmartScheduler(MockPredictor(), seed=42)
+    hm = BandHistoryManager()
+
+    decisions = [scheduler.select_band(bands, hm, t) for t in range(30)]
+
+    assert len(set(decisions)) == 30
+
+
+def test_cold_start_is_a_full_permutation_of_the_supplied_bands():
+    bands = [7, 19, 42, 88, 101, 203]
+    scheduler = SmartScheduler(MockPredictor(), seed=42)
+    hm = BandHistoryManager()
+
+    decisions = complete_cold_start(scheduler, bands, hm)
+
+    assert len(decisions) == len(bands)
+    assert set(decisions) == set(bands)
+    assert len(set(decisions)) == len(bands)
+
+
+def test_cold_start_uses_actual_non_contiguous_band_values():
+    bands = [105, 900, 12, 4096]
+    scheduler = SmartScheduler(MockPredictor(), seed=8)
+
+    decisions = complete_cold_start(scheduler, bands, BandHistoryManager())
+
+    assert set(decisions) == {105, 900, 12, 4096}
+
+
+def test_cold_start_same_seed_is_reproducible():
+    bands = list(range(50, 90))
+    first = complete_cold_start(SmartScheduler(MockPredictor(), seed=123), bands, BandHistoryManager())
+    second = complete_cold_start(SmartScheduler(MockPredictor(), seed=123), bands, BandHistoryManager())
+
+    assert first == second
+
+
+def test_cold_start_different_seeds_produce_different_permutations():
+    bands = list(range(40))
+    first = complete_cold_start(SmartScheduler(MockPredictor(), seed=1), bands, BandHistoryManager())
+    second = complete_cold_start(SmartScheduler(MockPredictor(), seed=2), bands, BandHistoryManager())
+
+    assert first != second
+
+
+def test_cold_start_does_not_call_or_depend_on_ml_predictions():
+    bands = list(range(12))
+    low_predictor = MockPredictor(default_prob=0.0)
+    high_predictor = MockPredictor(default_prob=1.0)
+    low_order = complete_cold_start(SmartScheduler(low_predictor, seed=73), bands, BandHistoryManager())
+    high_order = complete_cold_start(SmartScheduler(high_predictor, seed=73), bands, BandHistoryManager())
+
+    assert low_order == high_order
+    assert low_predictor.predict_all_calls == 0
+    assert high_predictor.predict_all_calls == 0
+
+
+def test_cold_start_transitions_to_existing_normal_scheduler_logic():
+    bands = [10, 20, 30]
+    predictor = MockPredictor(probabilities={10: 0.1, 20: 0.2, 30: 0.95})
+    scheduler = SmartScheduler(predictor, epsilon=0.0, seed=5)
+    hm = BandHistoryManager()
+
+    complete_cold_start(scheduler, bands, hm)
+    chosen = scheduler.select_band(bands, hm, current_time=10)
+
+    assert chosen == 30
+    assert predictor.predict_all_calls == 1
+
+
+def test_cold_start_supports_a_non_180_band_spectrum():
+    bands = [3, 8, 21, 34, 55, 89, 144]
+    decisions = complete_cold_start(SmartScheduler(MockPredictor(), seed=9), bands, BandHistoryManager())
+
+    assert set(decisions) == set(bands)
+    assert len(decisions) == 7
+
+
+def test_reset_restarts_cold_start_from_the_seeded_permutation():
+    bands = [11, 22, 33, 44, 55]
+    scheduler = SmartScheduler(MockPredictor(), seed=17)
+    hm = BandHistoryManager()
+    first = complete_cold_start(scheduler, bands, hm)
+
+    scheduler.reset()
+    second = complete_cold_start(scheduler, bands, hm)
+
+    assert second == first
+
+
+def test_cold_start_does_not_advance_the_existing_scheduler_rng():
+    bands = list(range(10))
+    scheduler = SmartScheduler(MockPredictor(), seed=99)
+    normal_rng_state = scheduler._rng.getstate()
+
+    complete_cold_start(scheduler, bands, BandHistoryManager())
+
+    assert scheduler._rng.getstate() == normal_rng_state
+
+
+def test_cold_start_reconciles_a_changing_band_list():
+    initial_bands = [10, 20, 30]
+    scheduler = SmartScheduler(MockPredictor(), seed=31)
+    hm = BandHistoryManager()
+
+    first = scheduler.select_band(initial_bands, hm, current_time=0)
+    disappeared = next(band for band in initial_bands if band != first)
+    original_pending_order = list(reversed(scheduler._cold_start_remaining))
+    expected_remaining = [band for band in original_pending_order if band != disappeared]
+    changed_bands = [band for band in initial_bands if band != disappeared] + [99]
+
+    second = scheduler.select_band(changed_bands, hm, current_time=1)
+    third = scheduler.select_band(changed_bands, hm, current_time=2)
+
+    assert second == expected_remaining[0]
+    assert third == 99
+    assert disappeared not in [second, third]
+    assert {first, second, third} == set(changed_bands)
 
 
 def test_single_active_band_enters_memory():
@@ -107,6 +243,7 @@ def test_multiple_active_candidates_prevent_monopoly_rotation():
         tracking_cooldown_penalty=0.20,
         w_active=0.15,
     )
+    complete_cold_start(scheduler, [16, 115, 50], hm)
 
     # Initial decision at t=21 picks one of the active candidates
     first_choice = scheduler.select_band([16, 115, 50], hm, current_time=21)
@@ -144,6 +281,7 @@ def test_return_to_previous_active_band_after_cooldown():
         tracking_dwell_limit=3,
         tracking_cooldown_penalty=0.20,
     )
+    complete_cold_start(scheduler, [16, 115], hm)
 
     # Decisions 1..3 dwell on first candidate (e.g. Band 16)
     c1 = scheduler.select_band([16, 115], hm, current_time=21)
@@ -238,6 +376,7 @@ def test_high_prob_recently_detected_beats_unobserved():
         f"Detected band (score={score_10:.4f}) must beat unobserved band (score={score_20:.4f})"
     )
 
+    complete_cold_start(scheduler, [10, 20], hm)
     chosen = scheduler.select_band([10, 20], hm, current_time=11)
     assert chosen == 10, f"Expected Band 10 to be chosen for initial burst exploitation, got {chosen}"
 
@@ -309,6 +448,7 @@ def test_exploration_still_functioning():
 
     mock_pred = MockPredictor(default_prob=0.3861)
     scheduler = SmartScheduler(mock_pred, epsilon=1.0, seed=42)
+    complete_cold_start(scheduler, [0, 1, 2], hm)
 
     chosen = scheduler.select_band([0, 1, 2], hm, current_time=4)
     assert chosen == 2, f"Expected least-scanned band (Band 2) to be chosen by exploration, got {chosen}"
@@ -411,6 +551,7 @@ def test_single_confirmed_active_band_cannot_monopolize_indefinitely():
     # High probability for Band 16 (0.95), lower for others
     mock_pred = MockPredictor(probabilities={16: 0.95, 20: 0.40, 30: 0.30})
     scheduler = SmartScheduler(mock_pred, epsilon=0.0, discovery_interval=5)
+    complete_cold_start(scheduler, [16, 20, 30], hm)
 
     # Steps 1 to 4: Confirmed active Band 16 is selected normally
     for step in range(1, 5):
@@ -439,6 +580,7 @@ def test_discovery_does_not_use_pure_random_selection():
     # Band 30 has highest probability among non-active candidates (0.40 vs 0.10, 0.20)
     mock_pred = MockPredictor(probabilities={16: 0.95, 20: 0.10, 30: 0.40, 40: 0.20})
     scheduler = SmartScheduler(mock_pred, epsilon=0.0, discovery_interval=5)
+    complete_cold_start(scheduler, [16, 20, 30, 40], hm)
 
     # Exploit Band 16 for 4 decisions
     for t in range(12, 16):
@@ -460,6 +602,7 @@ def test_discovery_does_not_become_blind_round_robin():
 
     mock_pred = MockPredictor(probabilities={16: 0.95, 20: 0.10, 30: 0.40, 40: 0.20})
     scheduler = SmartScheduler(mock_pred, epsilon=0.0, discovery_interval=3)
+    complete_cold_start(scheduler, [16, 20, 30, 40], hm)
 
     # Cycle 1 discovery (after 2 active scans)
     scheduler.select_band([16, 20, 30, 40], hm, current_time=12)
@@ -494,6 +637,7 @@ def test_multi_band_tracking_preserved_with_two_active_bands():
         tracking_cooldown_penalty=0.20,
         discovery_interval=5,
     )
+    complete_cold_start(scheduler, [16, 115, 50], hm)
 
     # 4 decisions dwell on first choice
     c1 = scheduler.select_band([16, 115, 50], hm, current_time=12)
@@ -517,6 +661,7 @@ def test_confirmed_active_band_selected_normally_outside_discovery():
 
     mock_pred = MockPredictor(probabilities={16: 0.70, 20: 0.30})
     scheduler = SmartScheduler(mock_pred, epsilon=0.0, discovery_interval=5, w_active=0.15)
+    complete_cold_start(scheduler, [16, 20], hm)
 
     # Decision 1: Band 16 receives +0.15 active bonus and wins over Band 20
     chosen = scheduler.select_band([16, 20], hm, current_time=12)
