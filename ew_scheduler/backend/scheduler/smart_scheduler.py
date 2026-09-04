@@ -63,6 +63,11 @@ class SmartScheduler(BaseScheduler):
         self.epsilon = epsilon
         self.stale_cap = stale_cap
         self._rng = random.Random(seed)
+        # Cold start has an independent stream so its permutation never
+        # consumes draws that the established epsilon/exploration policy
+        # would otherwise make after normal scheduling begins.
+        self._cold_start_seed = seed
+        self._cold_start_rng = random.Random(seed)
 
         # Anti-overexploitation & exploration parameters
         self.repeat_penalty_weight = repeat_penalty_weight
@@ -92,6 +97,9 @@ class SmartScheduler(BaseScheduler):
         self._consecutive_active_scans = 0
         self._active_memory: dict[int, dict] = {}
         self._discovery_candidates: dict[int, dict] = {}
+        self._cold_start_remaining: list[int] = []
+        self._cold_start_visited: set[int] = set()
+        self._cold_start_initialized = False
 
     def reset(self) -> None:
         self._last_scanned = None
@@ -100,6 +108,46 @@ class SmartScheduler(BaseScheduler):
         self._consecutive_active_scans = 0
         self._active_memory = {}
         self._discovery_candidates = {}
+        self._cold_start_remaining = []
+        self._cold_start_visited = set()
+        self._cold_start_initialized = False
+        self._cold_start_rng = random.Random(self._cold_start_seed)
+
+    def _select_cold_start_band(self, bands: list[int]) -> int | None:
+        """Return the next band in the one-pass cold-start permutation.
+
+        The first supplied band list is copied and shuffled as values, rather
+        than synthesizing indexes, so this works for arbitrary spectrum sizes
+        and non-contiguous band IDs. ``None`` signals that cold start is over.
+        """
+        available_bands = list(dict.fromkeys(bands))
+        available_set = set(available_bands)
+
+        if not self._cold_start_initialized:
+            self._cold_start_remaining = available_bands
+            self._cold_start_rng.shuffle(self._cold_start_remaining)
+            self._cold_start_initialized = True
+        else:
+            # Keep the original pending order for bands still available.
+            # Newly available, unvisited bands are shuffled using only the
+            # cold-start RNG and queued after existing pending exploration.
+            self._cold_start_remaining = [
+                band for band in self._cold_start_remaining
+                if band in available_set
+            ]
+            pending = set(self._cold_start_remaining)
+            additions = [
+                band for band in available_bands
+                if band not in self._cold_start_visited and band not in pending
+            ]
+            self._cold_start_rng.shuffle(additions)
+            self._cold_start_remaining = additions + self._cold_start_remaining
+
+        if self._cold_start_remaining:
+            chosen = self._cold_start_remaining.pop()
+            self._cold_start_visited.add(chosen)
+            return chosen
+        return None
 
     # ------------------------------------------------------------------
     # ACTIVE-BAND MEMORY & DISCOVERY CANDIDATE MANAGEMENT
@@ -281,6 +329,13 @@ class SmartScheduler(BaseScheduler):
         history_manager: BandHistoryManager,
         current_time: int,
     ) -> int:
+        # Cold start deliberately precedes every normal scheduling mechanism.
+        # With no receiver history, model scores carry no discriminative
+        # information; a seeded permutation provides broad, unbiased coverage.
+        cold_start_band = self._select_cold_start_band(bands)
+        if cold_start_band is not None:
+            return cold_start_band
+
         # Update active candidate memory and temporary discovery candidates using observations so far
         self._update_active_memory(bands, history_manager, current_time)
 
