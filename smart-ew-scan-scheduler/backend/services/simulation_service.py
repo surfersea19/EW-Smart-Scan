@@ -57,7 +57,7 @@ class RealSimulationEngine:
         scheduler (see integration/scheduler_adapter.py).
         """
         p1_config = P1ScenarioConfig(
-            seed=getattr(scenario, "seed", 0),
+            seed=scenario.scenario_seed,
             spectrum_config=SpectrumConfig(num_bands=scenario.num_bands),
             num_emitters=scenario.num_emitters,
         )
@@ -65,7 +65,7 @@ class RealSimulationEngine:
         self.environment = generator.generate()
 
         noise_std = _NOISE_STD_BY_LEVEL.get(scenario.noise_level, 3.0)
-        noise = NoiseModel(NoiseConfig(noise_std_db=noise_std, seed=getattr(scenario, "seed", 0)))
+        noise = NoiseModel(NoiseConfig(noise_std_db=noise_std, seed=scenario.scenario_seed))
         detector = DetectionModel(noise, DetectionConfig())
         self.receiver = VirtualReceiver(self.environment, detection_model=detector)
         self.engine = SimulationEngine(self.environment, self.receiver, scheduler=p1_scheduler)

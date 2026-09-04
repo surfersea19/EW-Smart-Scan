@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 from typing import Optional, Literal
 from .prediction import BandPrediction
 from .scheduler import PredictedActivity
@@ -18,12 +18,18 @@ class ActiveEmitterInfo(BaseModel):
 
 
 class ScenarioConfig(BaseModel):
+    """Single reproducible run configuration for live and comparison runs."""
     num_bands: int = 180          # overwritten from the real Spectrum after reset; see simulation_service.py
     num_emitters: int = 5
     duration: int = 300           # ticks, used by the comparison endpoint
     noise_level: Literal["low", "medium", "high"] = "medium"
     strategy: StrategyType = "smart_ml"
-    seed: int = 0                 # reproducible scenarios, passed straight to P1's ScenarioConfig
+    scenario_seed: int = Field(
+        default=0,
+        validation_alias=AliasChoices("scenario_seed", "seed"),
+    )  # P1 environment generation and receiver noise; accepts legacy ``seed`` input
+    scheduler_seed: int = 0       # P2 Random/Smart scheduler decision streams
+    model_name: Literal["logistic", "random_forest", "xgboost"] = "random_forest"
     playback_speed: int = 5       # 1x, 5x, 10x wall-clock execution pacing
 
 

@@ -1,6 +1,6 @@
 import { useSimulationStore } from "../store/simulationStore";
 import { api } from "../services/api";
-import type { NoiseLevel, Strategy } from "../types/simulation";
+import type { NoiseLevel, Strategy, ScenarioConfig } from "../types/simulation";
 
 export function SimulationControls() {
   const scenario = useSimulationStore((s) => s.scenario);
@@ -14,7 +14,7 @@ export function SimulationControls() {
   const resetHistory = useSimulationStore((s) => s.resetHistory);
   const connected = useSimulationStore((s) => s.connected);
 
-  const update = (patch: Partial<typeof scenario>) => {
+  const update = (patch: Partial<ScenarioConfig>) => {
     const next = { ...scenario, ...patch };
     setScenario(next);
     setRunning(false);
@@ -124,6 +124,36 @@ export function SimulationControls() {
             <option value="smart_ml">Smart ML</option>
             <option value="sequential">Sequential</option>
             <option value="random">Random</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          Scenario Seed
+          <input
+            type="number"
+            className="bg-slate-800 rounded px-2 py-1"
+            value={scenario.scenario_seed}
+            onChange={(e) => update({ scenario_seed: Number(e.target.value) })}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          Scheduler Seed
+          <input
+            type="number"
+            className="bg-slate-800 rounded px-2 py-1"
+            value={scenario.scheduler_seed}
+            onChange={(e) => update({ scheduler_seed: Number(e.target.value) })}
+          />
+        </label>
+        <label className="flex flex-col gap-1 col-span-2">
+          Model
+          <select
+            className="bg-slate-800 rounded px-2 py-1"
+            value={scenario.model_name}
+            onChange={(e) => update({ model_name: e.target.value as ScenarioConfig["model_name"] })}
+          >
+            <option value="logistic">Logistic Regression</option>
+            <option value="random_forest">Random Forest</option>
+            <option value="xgboost">XGBoost</option>
           </select>
         </label>
         <div className="flex flex-col gap-1 col-span-2">

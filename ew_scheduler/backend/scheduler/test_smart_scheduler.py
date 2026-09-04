@@ -134,6 +134,24 @@ def test_reset_restarts_cold_start_from_the_seeded_permutation():
     assert second == first
 
 
+def test_reset_restores_the_normal_scheduler_rng_sequence():
+    bands = [10, 20, 30, 40]
+    scheduler = SmartScheduler(MockPredictor(), epsilon=1.0, seed=18)
+    hm = BandHistoryManager()
+
+    complete_cold_start(scheduler, bands, hm)
+    first_run = [scheduler.select_band(bands, hm, current_time=10 + i) for i in range(8)]
+
+    scheduler.reset()
+    complete_cold_start(scheduler, bands, BandHistoryManager())
+    second_run = [
+        scheduler.select_band(bands, BandHistoryManager(), current_time=10 + i)
+        for i in range(8)
+    ]
+
+    assert second_run == first_run
+
+
 def test_cold_start_does_not_advance_the_existing_scheduler_rng():
     bands = list(range(10))
     scheduler = SmartScheduler(MockPredictor(), seed=99)
