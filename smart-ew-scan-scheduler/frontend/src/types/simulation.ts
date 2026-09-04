@@ -5,6 +5,13 @@
 export type Strategy = "sequential" | "random" | "smart_ml";
 export type NoiseLevel = "low" | "medium" | "high";
 
+export interface ActiveEmitter {
+  band: number;
+  emitter_id?: string | null;
+  emitter_type?: string | null;
+  power_db?: number | null;
+}
+
 export interface ScenarioConfig {
   num_bands: number;
   num_emitters: number;
@@ -12,6 +19,7 @@ export interface ScenarioConfig {
   noise_level: NoiseLevel;
   strategy: Strategy;
   seed?: number;
+  playback_speed?: number;
 }
 
 export interface BandPrediction {
@@ -62,10 +70,19 @@ export interface WSDelta {
   predicted_activity: PredictedActivity[];
   metrics: Metrics;
   running: boolean;
-  // Added so the frontend learns immediately when the backend auto-stops
-  // after ScenarioConfig.duration is reached -- without this, "running"
-  // only ever changed in response to explicit start()/stop() clicks and
-  // could go stale after an automatic stop.
+  completed?: boolean;
+  playback_speed?: number;
+  active_emitters?: ActiveEmitter[];
+}
+
+export interface SimulationState {
+  running: boolean;
+  completed: boolean;
+  scenario: ScenarioConfig;
+  simulation_time: number;
+  current_band: number | null;
+  metrics: Metrics;
+  playback_speed: number;
 }
 
 export interface ComparisonResult {

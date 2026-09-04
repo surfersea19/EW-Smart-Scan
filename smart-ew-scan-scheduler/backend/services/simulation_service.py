@@ -65,7 +65,7 @@ class RealSimulationEngine:
         self.environment = generator.generate()
 
         noise_std = _NOISE_STD_BY_LEVEL.get(scenario.noise_level, 3.0)
-        noise = NoiseModel(NoiseConfig(noise_std_db=noise_std))
+        noise = NoiseModel(NoiseConfig(noise_std_db=noise_std, seed=getattr(scenario, "seed", 0)))
         detector = DetectionModel(noise, DetectionConfig())
         self.receiver = VirtualReceiver(self.environment, detection_model=detector)
         self.engine = SimulationEngine(self.environment, self.receiver, scheduler=p1_scheduler)

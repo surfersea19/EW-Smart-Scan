@@ -15,6 +15,8 @@ export function Dashboard() {
   const applyDelta = useSimulationStore((s) => s.applyDelta);
   const setConnected = useSimulationStore((s) => s.setConnected);
   const setScenario = useSimulationStore((s) => s.setScenario);
+  const setRunning = useSimulationStore((s) => s.setRunning);
+  const setCompleted = useSimulationStore((s) => s.setCompleted);
   const socketRef = useRef<SimulationSocket | null>(null);
 
   useEffect(() => {
@@ -34,9 +36,13 @@ export function Dashboard() {
     // the UI always reflects what's actually running, not a guess.
     api
       .getState()
-      .then((state) => setScenario(state.scenario))
+      .then((state) => {
+        setScenario(state.scenario);
+        setRunning(state.running);
+        setCompleted(state.completed);
+      })
       .catch((err) => console.error("Failed to fetch initial backend state", err));
-  }, [setScenario]);
+  }, [setScenario, setRunning, setCompleted]);
 
   return (
     <div className="min-h-screen p-6 max-w-7xl mx-auto">

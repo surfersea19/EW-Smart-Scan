@@ -24,10 +24,15 @@ look-ahead; the frontend's "Scheduler Decision" panel is relabeled
 accordingly (see frontend changes) to describe why this tick's band was
 chosen, not to promise a preview of the future.
 """
-from schemas.simulation import ScenarioConfig, SimulationState, ObservationView
+from schemas.simulation import (
+    ScenarioConfig,
+    SimulationState,
+    ObservationView,
+    ActiveEmitterInfo,
+    WSDelta,
+)
 from schemas.prediction import BandPrediction
 from schemas.scheduler import PredictedActivity
-from schemas.simulation import WSDelta
 
 from services import simulation_service, scheduler_service
 from services.prediction_service import PredictorNotAvailableError
@@ -46,6 +51,7 @@ class SimulationOrchestrator:
         self.state = SimulationState()
         self.scheduler_adapter = None
         self.live_metrics: LiveMetricsTracker | None = None
+        self.playback_speed: int = 5
 
     def reset(self, scenario: ScenarioConfig) -> None:
         """
@@ -63,12 +69,30 @@ class SimulationOrchestrator:
         # spectrum's band count -- read it back rather than trusting the
         # pre-reset value.
         self.scenario = engine.scenario
+        self.playback_speed = getattr(scenario, "playback_speed", 5)
 
         self.live_metrics = LiveMetricsTracker(scheduler_name=scenario.strategy)
-        self.state = SimulationState(scenario=self.scenario)
+        self.state = SimulationState(
+            scenario=self.scenario,
+            playback_speed=self.playback_speed,
+            running=False,
+            completed=False,
+        )
+
+    def set_playback_speed(self, speed: int) -> None:
+        self.playback_speed = max(1, speed)
+        self.state.playback_speed = self.playback_speed
+        if hasattr(self, "scenario") and self.scenario is not None:
+            self.scenario.playback_speed = self.playback_speed
 
     def start(self) -> None:
+        engine = simulation_service.get_simulation_engine()
+        if engine.engine is not None and engine.current_time >= self.scenario.duration:
+            self.state.running = False
+            self.state.completed = True
+            return
         self.state.running = True
+        self.state.completed = False
 
     def pause(self) -> None:
         self.state.running = False
@@ -84,6 +108,25 @@ class SimulationOrchestrator:
 
     def tick(self) -> WSDelta:
         engine = simulation_service.get_simulation_engine()
+        if engine.current_time >= self.scenario.duration:
+            self.pause()
+            self.state.completed = True
+            return WSDelta(
+                time=self.state.simulation_time,
+                current_band=self.state.current_band,
+                detected=self.state.last_observation.detected if self.state.last_observation else False,
+                power=self.state.last_observation.measured_power_db if self.state.last_observation else None,
+                top_predictions=self.state.predictions,
+                next_band=self.state.next_band,
+                scheduler_reason=self.state.scheduler_reason,
+                predicted_activity=self.state.predicted_activity,
+                running=False,
+                completed=True,
+                metrics=self.state.metrics,
+                playback_speed=self.playback_speed,
+                active_emitters=self.state.active_emitters,
+            )
+
         observations = engine.step_once()  # real P1 decision + scan, atomic
 
         environment = engine.environment
@@ -92,6 +135,20 @@ class SimulationOrchestrator:
             self.live_metrics.update(obs, gt_records)
 
         last_obs = observations[-1]
+
+        # Extract simulated RF environment activity for this tick for waterfall visualization ONLY.
+        # This ground-truth activity is never passed to the ML predictor or scheduler.
+        latest_gt = ground_truth_records_at(environment.ground_truth_log, last_obs.time)
+        active_emitters = [
+            ActiveEmitterInfo(
+                band=r.band,
+                emitter_id=r.emitter_id,
+                emitter_type=r.emitter_type,
+                power_db=r.power_db,
+            )
+            for r in latest_gt
+            if r.active and r.band is not None
+        ]
 
         # DURATION ENFORCEMENT (bug fix): P1's SimulationEngine has no
         # concept of a target run length -- it just runs however many
@@ -114,6 +171,9 @@ class SimulationOrchestrator:
         # pause()'s own finalize() call above.
         if engine.current_time >= self.scenario.duration:
             self.pause()
+            self.state.completed = True
+        else:
+            self.state.completed = False
 
         predictions = self._top_predictions()
         predicted_activity = self._predicted_activity(predictions)
@@ -138,6 +198,8 @@ class SimulationOrchestrator:
         self.state.scheduler_reason = self.scheduler_adapter.last_reason
         self.state.predicted_activity = predicted_activity
         self.state.metrics = metrics
+        self.state.playback_speed = self.playback_speed
+        self.state.active_emitters = active_emitters
 
         return WSDelta(
             time=last_obs.time,
@@ -149,7 +211,10 @@ class SimulationOrchestrator:
             scheduler_reason=self.scheduler_adapter.last_reason,
             predicted_activity=predicted_activity,
             running=self.state.running,  # reflects an auto-stop from THIS tick, if any
+            completed=self.state.completed,
             metrics=metrics,
+            playback_speed=self.playback_speed,
+            active_emitters=active_emitters,
         )
 
     def _top_predictions(self) -> list[BandPrediction]:

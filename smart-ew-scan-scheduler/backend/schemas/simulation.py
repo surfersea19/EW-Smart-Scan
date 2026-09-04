@@ -10,6 +10,13 @@ from .scheduler import PredictedActivity
 StrategyType = Literal["sequential", "random", "smart_ml"]
 
 
+class ActiveEmitterInfo(BaseModel):
+    band: int
+    emitter_id: Optional[str] = None
+    emitter_type: Optional[str] = None
+    power_db: Optional[float] = None
+
+
 class ScenarioConfig(BaseModel):
     num_bands: int = 180          # overwritten from the real Spectrum after reset; see simulation_service.py
     num_emitters: int = 5
@@ -17,6 +24,7 @@ class ScenarioConfig(BaseModel):
     noise_level: Literal["low", "medium", "high"] = "medium"
     strategy: StrategyType = "smart_ml"
     seed: int = 0                 # reproducible scenarios, passed straight to P1's ScenarioConfig
+    playback_speed: int = 5       # 1x, 5x, 10x wall-clock execution pacing
 
 
 class ObservationView(BaseModel):
@@ -48,11 +56,12 @@ class Metrics(BaseModel):
 class SimulationState(BaseModel):
     """
     Full authoritative backend state, for the /simulation/state REST
-    endpoint. Ground truth deliberately lives OUTSIDE this model (it's
-    read only inside integration/evaluation_adapter.py) so it can never
-    be accidentally serialized into a receiver-facing payload.
+    endpoint. Ground truth is strictly isolated and never fed into ML
+    decision paths; active_emitters is provided exclusively for the
+    environment waterfall visualization.
     """
     running: bool = False
+    completed: bool = False
     scenario: ScenarioConfig = ScenarioConfig()
     simulation_time: int = 0
     current_band: Optional[int] = None
@@ -62,12 +71,15 @@ class SimulationState(BaseModel):
     scheduler_reason: Optional[str] = None
     predicted_activity: list[PredictedActivity] = []
     metrics: Metrics = Metrics()
+    playback_speed: int = 5
+    active_emitters: list[ActiveEmitterInfo] = []
 
 
 class WSDelta(BaseModel):
     """
     Compact per-tick payload pushed to the frontend over WebSocket.
-    Receiver-facing only -- no ground truth here.
+    active_emitters captures simulated RF environment activity for the
+    waterfall display only (never passed to ML/scheduler).
     """
     time: int
     current_band: Optional[int]
@@ -79,9 +91,6 @@ class WSDelta(BaseModel):
     predicted_activity: list[PredictedActivity] = []
     metrics: Metrics
     running: bool = True
-    # ^ Added so the frontend learns immediately when the backend
-    # auto-stops after reaching ScenarioConfig.duration (see
-    # orchestrator.tick()) -- without this, the frontend's local
-    # "running" flag only ever changed in response to explicit
-    # start()/stop() button clicks and had no way to learn the backend
-    # stopped itself, leaving a stale "running=true" in the UI.
+    completed: bool = False
+    playback_speed: int = 5
+    active_emitters: list[ActiveEmitterInfo] = []
