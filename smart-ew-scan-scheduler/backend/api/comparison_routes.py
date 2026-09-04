@@ -56,7 +56,11 @@ def run_comparison(base_scenario: ScenarioConfig):
         scenario = base_scenario.model_copy(update={"strategy": strategy})
 
         try:
-            scheduler_adapter = scheduler_service.build_scheduler_adapter(strategy)
+            scheduler_adapter = scheduler_service.build_scheduler_adapter(
+                strategy,
+                scheduler_seed=scenario.scheduler_seed,
+                model_name=scenario.model_name,
+            )
         except PredictorNotAvailableError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 

@@ -18,7 +18,11 @@ from smart_scheduler import SmartScheduler  # noqa: E402
 __all__ = ["build_scheduler_adapter", "PredictorNotAvailableError"]
 
 
-def build_scheduler_adapter(strategy: str) -> SchedulerAdapter:
+def build_scheduler_adapter(
+    strategy: str,
+    scheduler_seed: int = 0,
+    model_name: str = "random_forest",
+) -> SchedulerAdapter:
     """
     strategy: "sequential" | "random" | "smart_ml"
 
@@ -29,10 +33,10 @@ def build_scheduler_adapter(strategy: str) -> SchedulerAdapter:
     if strategy == "sequential":
         p2_scheduler = SequentialScheduler()
     elif strategy == "random":
-        p2_scheduler = RandomScheduler()
+        p2_scheduler = RandomScheduler(seed=scheduler_seed)
     elif strategy == "smart_ml":
-        predictor = get_predictor()  # raises PredictorNotAvailableError if untrained
-        p2_scheduler = SmartScheduler(predictor)
+        predictor = get_predictor(model_name)  # raises PredictorNotAvailableError if untrained
+        p2_scheduler = SmartScheduler(predictor, seed=scheduler_seed)
     else:
         raise ValueError(f"Unknown strategy: {strategy!r}")
 

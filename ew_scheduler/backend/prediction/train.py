@@ -26,9 +26,15 @@ class ModelTrainer:
     All models output probabilities, not hard 0/1 predictions.
     """
 
-    def __init__(self, feature_names: list[str], model_dir: str = MODEL_DIR):
+    def __init__(
+        self,
+        feature_names: list[str],
+        model_dir: str = MODEL_DIR,
+        random_state: int = 42,
+    ):
         self.feature_names = feature_names
         self.model_dir     = model_dir
+        self.random_state  = random_state
         os.makedirs(model_dir, exist_ok=True)
         self.models: dict[str, object] = {}
 
@@ -41,7 +47,7 @@ class ModelTrainer:
         return LogisticRegression(
             class_weight="balanced",
             max_iter=1000,
-            random_state=42,
+            random_state=self.random_state,
         )
 
     def _build_random_forest(self):
@@ -49,7 +55,7 @@ class ModelTrainer:
             n_estimators=100,
             max_depth=8,
             class_weight="balanced",
-            random_state=42,
+            random_state=self.random_state,
             n_jobs=-1,
         )
 
@@ -62,7 +68,7 @@ class ModelTrainer:
             colsample_bytree=0.8,
             scale_pos_weight=3,
             eval_metric="logloss",
-            random_state=42,
+            random_state=self.random_state,
             verbosity=0,
         )
 

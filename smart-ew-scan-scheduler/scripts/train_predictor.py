@@ -58,7 +58,8 @@ from dataset_builder import DatasetBuilder  # noqa: E402
 from train import ModelTrainer  # noqa: E402  (P2's REAL trainer -- unmodified)
 
 # --- Configuration -----------------------------------------------------
-SEED = 42
+SCENARIO_SEED = 42
+TRAINING_SEED = 42
 NUM_BANDS = 180        # matches P1's default SpectrumConfig
 NUM_EMITTERS = 8
 NUM_DECISIONS = 8000    # scheduler decisions to run for training data coverage
@@ -76,13 +77,13 @@ def main():
     print("=" * 70)
 
     generator = ScenarioGenerator(P1ScenarioConfig(
-        seed=SEED,
+        seed=SCENARIO_SEED,
         spectrum_config=SpectrumConfig(num_bands=NUM_BANDS),
         num_emitters=NUM_EMITTERS,
     ))
     environment = generator.generate()
 
-    noise = NoiseModel(NoiseConfig(noise_std_db=NOISE_STD_DB))
+    noise = NoiseModel(NoiseConfig(noise_std_db=NOISE_STD_DB, seed=SCENARIO_SEED))
     detector = DetectionModel(noise, DetectionConfig())
     receiver = VirtualReceiver(environment, detection_model=detector)
     # NaiveSequentialScheduler: broad, unbiased band coverage for training
@@ -135,7 +136,10 @@ def main():
 
     train_df, val_df, _test_df = builder.time_split(dataset)
 
-    trainer = ModelTrainer(feature_names=feature_extractor.feature_names())
+    trainer = ModelTrainer(
+        feature_names=feature_extractor.feature_names(),
+        random_state=TRAINING_SEED,
+    )
     print("\nTraining all models (Person 2's real ModelTrainer -- logistic, "
           "random_forest, xgboost)...")
     comparison = trainer.train_all(train_df, val_df)

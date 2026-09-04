@@ -62,7 +62,9 @@ class SmartScheduler(BaseScheduler):
         self.w_recent = w_recent
         self.epsilon = epsilon
         self.stale_cap = stale_cap
+        self._seed = seed
         self._rng = random.Random(seed)
+        self._initial_rng_state = self._rng.getstate()
         # Cold start has an independent stream so its permutation never
         # consumes draws that the established epsilon/exploration policy
         # would otherwise make after normal scheduling begins.
@@ -111,6 +113,7 @@ class SmartScheduler(BaseScheduler):
         self._cold_start_remaining = []
         self._cold_start_visited = set()
         self._cold_start_initialized = False
+        self._rng.setstate(self._initial_rng_state)
         self._cold_start_rng = random.Random(self._cold_start_seed)
 
     def _select_cold_start_band(self, bands: list[int]) -> int | None:

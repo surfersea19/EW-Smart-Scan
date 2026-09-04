@@ -61,7 +61,11 @@ class SimulationOrchestrator:
         which turns it into a clear HTTP error instead of silently
         training on the spot.
         """
-        self.scheduler_adapter = scheduler_service.build_scheduler_adapter(scenario.strategy)
+        self.scheduler_adapter = scheduler_service.build_scheduler_adapter(
+            scenario.strategy,
+            scheduler_seed=scenario.scheduler_seed,
+            model_name=scenario.model_name,
+        )
 
         engine = simulation_service.get_simulation_engine()
         engine.reset(scenario, self.scheduler_adapter)

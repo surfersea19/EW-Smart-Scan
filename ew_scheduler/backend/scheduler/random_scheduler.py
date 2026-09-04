@@ -17,10 +17,12 @@ class RandomScheduler(BaseScheduler):
     """
 
     def __init__(self, seed: int = None):
+        self._seed = seed
         self._rng = random.Random(seed)
+        self._initial_rng_state = self._rng.getstate()
 
     def reset(self) -> None:
-        pass
+        self._rng.setstate(self._initial_rng_state)
 
     def select_band(
         self,

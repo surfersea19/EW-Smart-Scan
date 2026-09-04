@@ -18,7 +18,9 @@ export interface ScenarioConfig {
   duration: number;
   noise_level: NoiseLevel;
   strategy: Strategy;
-  seed?: number;
+  scenario_seed: number;
+  scheduler_seed: number;
+  model_name: "logistic" | "random_forest" | "xgboost";
   playback_speed?: number;
 }
 

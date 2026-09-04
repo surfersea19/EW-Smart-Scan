@@ -30,21 +30,20 @@ class PredictorNotAvailableError(RuntimeError):
     pass
 
 
-_predictor_instance = None
+_predictor_instances: dict[str, Predictor] = {}
 
 
-def get_predictor() -> Predictor:
-    global _predictor_instance
-    if _predictor_instance is None:
+def get_predictor(model_name: str = DEFAULT_MODEL_NAME) -> Predictor:
+    if model_name not in _predictor_instances:
         fe = FeatureExtractor(window_size=WINDOW_SIZE, n_lags=N_LAGS)
         try:
-            _predictor_instance = Predictor(DEFAULT_MODEL_NAME, fe)
+            _predictor_instances[model_name] = Predictor(model_name, fe)
         except FileNotFoundError as exc:
             raise PredictorNotAvailableError(
-                f"No trained model found for '{DEFAULT_MODEL_NAME}'. "
+                f"No trained model found for '{model_name}'. "
                 "Run `python3 scripts/train_predictor.py` from inside "
                 "smart-ew-scan-scheduler/ before starting the Smart ML "
                 "scheduler. Sequential and Random strategies do not "
                 "require a trained model and can be used immediately."
             ) from exc
-    return _predictor_instance
+    return _predictor_instances[model_name]
