@@ -10,7 +10,11 @@ export function SchedulerDecision() {
         Scheduler Decision
       </h3>
       <div className="font-mono">
-        <div className="text-xs text-slate-500">Next Scan</div>
+        {/* Labeled "Band Chosen" rather than "Next Scan": Person 1's real
+            SimulationEngine decides and scans a band in the same atomic
+            step, so there's no separate "upcoming" band to preview --
+            this is the band this tick's decision picked and just scanned. */}
+        <div className="text-xs text-slate-500">Band Chosen</div>
         <div className="text-3xl text-accent font-bold">
           {nextBand !== null ? `B${nextBand}` : "—"}
         </div>

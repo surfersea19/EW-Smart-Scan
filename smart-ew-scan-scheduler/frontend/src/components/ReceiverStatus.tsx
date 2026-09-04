@@ -5,8 +5,9 @@ export function ReceiverStatus() {
   const detected = useSimulationStore((s) => s.detected);
   const power = useSimulationStore((s) => s.power);
   const running = useSimulationStore((s) => s.running);
+  const completed = useSimulationStore((s) => s.completed);
 
-  const status = running ? "SCANNING" : "IDLE";
+  const status = running ? "SCANNING" : completed ? "COMPLETED" : "IDLE";
   const result = detected === null ? "—" : detected ? "HIT" : "MISS";
   const resultColor =
     detected === null ? "text-slate-400" : detected ? "text-hit" : "text-miss";

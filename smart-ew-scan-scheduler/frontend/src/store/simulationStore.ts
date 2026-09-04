@@ -1,16 +1,20 @@
 import { create } from "zustand";
-import type { WSDelta, ScenarioConfig, Metrics } from "../types/simulation";
+import type { WSDelta, ScenarioConfig, Metrics, ActiveEmitter } from "../types/simulation";
 
-interface HistoryPoint {
+export interface HistoryPoint {
   time: number;
   band: number | null;
   detected: boolean | null;
+  power?: number | null;
+  activeEmitters: ActiveEmitter[];
 }
 
 interface SimulationStore {
   connected: boolean;
   running: boolean;
+  completed: boolean;
   scenario: ScenarioConfig;
+  playbackSpeed: number;
   time: number;
   currentBand: number | null;
   detected: boolean | null;
@@ -18,13 +22,16 @@ interface SimulationStore {
   predictions: WSDelta["top_predictions"];
   nextBand: number | null;
   schedulerReason: string | null;
-  tracks: WSDelta["tracks"];
+  predictedActivity: WSDelta["predicted_activity"];
   metrics: Metrics;
   history: HistoryPoint[];
+  activeEmitters: ActiveEmitter[];
 
   setConnected: (c: boolean) => void;
   setRunning: (r: boolean) => void;
+  setCompleted: (c: boolean) => void;
   setScenario: (s: ScenarioConfig) => void;
+  setPlaybackSpeed: (speed: number) => void;
   applyDelta: (d: WSDelta) => void;
   resetHistory: () => void;
 }
@@ -45,13 +52,16 @@ const emptyMetrics: Metrics = {
 export const useSimulationStore = create<SimulationStore>((set) => ({
   connected: false,
   running: false,
+  completed: false,
   scenario: {
-    num_bands: 100,
+    num_bands: 180, // matches Person 1's real SpectrumConfig default; overwritten on reset regardless
     num_emitters: 5,
     duration: 300,
     noise_level: "medium",
     strategy: "smart_ml",
+    playback_speed: 5,
   },
+  playbackSpeed: 5,
   time: 0,
   currentBand: null,
   detected: null,
@@ -59,13 +69,24 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
   predictions: [],
   nextBand: null,
   schedulerReason: null,
-  tracks: [],
+  predictedActivity: [],
   metrics: emptyMetrics,
   history: [],
+  activeEmitters: [],
 
   setConnected: (connected) => set({ connected }),
   setRunning: (running) => set({ running }),
-  setScenario: (scenario) => set({ scenario }),
+  setCompleted: (completed) => set({ completed }),
+  setScenario: (scenario) =>
+    set((state) => ({
+      scenario,
+      playbackSpeed: scenario.playback_speed ?? state.playbackSpeed,
+    })),
+  setPlaybackSpeed: (playbackSpeed) =>
+    set((state) => ({
+      playbackSpeed,
+      scenario: { ...state.scenario, playback_speed: playbackSpeed },
+    })),
 
   applyDelta: (d) =>
     set((state) => ({
@@ -76,11 +97,22 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
       predictions: d.top_predictions,
       nextBand: d.next_band,
       schedulerReason: d.scheduler_reason ?? null,
-      tracks: d.tracks,
+      predictedActivity: d.predicted_activity,
       metrics: d.metrics,
+      // Reconcile "running" and "completed" from backend delta
+      running: d.running,
+      completed: d.completed ?? (d.time >= state.scenario.duration),
+      playbackSpeed: d.playback_speed ?? state.playbackSpeed,
+      activeEmitters: d.active_emitters ?? [],
       history: [
         ...state.history,
-        { time: d.time, band: d.current_band, detected: d.detected },
+        {
+          time: d.time,
+          band: d.current_band,
+          detected: d.detected,
+          power: d.power ?? null,
+          activeEmitters: d.active_emitters ?? [],
+        },
       ].slice(-HISTORY_LIMIT),
     })),
 
@@ -88,12 +120,15 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
     set({
       history: [],
       time: 0,
+      completed: false,
       currentBand: null,
       detected: null,
+      power: null,
       predictions: [],
       nextBand: null,
       schedulerReason: null,
-      tracks: [],
+      predictedActivity: [],
       metrics: emptyMetrics,
+      activeEmitters: [],
     }),
 }));

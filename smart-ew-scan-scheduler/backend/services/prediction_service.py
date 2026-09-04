@@ -1,65 +1,50 @@
 """
-Prediction service.
+prediction_service.py -- REAL Person 2 integration.
 
-Person 2's territory: feature engineering + ML prediction.
+Loads Person 2's real Predictor against a model trained offline.
 
-CRITICAL: predict() must only ever be given observation history, never
-ground truth. The mock below deliberately only sees what get_simulation_engine()
-.observe() has returned over time -- same constraint the real model must obey.
-
-TO INTEGRATE PERSON 2's REAL CODE:
-  Implement PredictorProtocol, swap the instantiation in get_predictor().
+DELIBERATE DESIGN CHOICE (per integration sign-off): this module never
+trains a model itself, and never runs at application startup as a
+training step. If no trained model artifact exists on disk, it raises
+PredictorNotAvailableError with instructions -- it does NOT silently
+fall back to training using live ground truth. Training is a separate,
+explicit, offline step: run `python3 scripts/train_predictor.py` once
+before starting the application. That script uses ground truth only to
+generate training LABELS (the offline-permitted use) -- this module's
+job is strictly live inference on trained weights.
 """
-from __future__ import annotations
-import random
-from collections import defaultdict
-from typing import Protocol
+from integration.repo_paths import register_p1_p2_on_path
+from integration.feature_config import WINDOW_SIZE, N_LAGS, DEFAULT_MODEL_NAME
 
-from schemas.observation import Observation
-from schemas.prediction import BandPrediction
+register_p1_p2_on_path()
 
-
-class PredictorProtocol(Protocol):
-    def predict(
-        self, obs_history: list[Observation], num_bands: int, top_k: int = 5
-    ) -> list[BandPrediction]: ...
+from predict import Predictor  # noqa: E402  (P2, path registered above)
+from feature_engineering import FeatureExtractor  # noqa: E402
 
 
-class MockPredictor:
-    """
-    Heuristic stand-in: scores a band by recency-weighted hit frequency
-    plus a little exploration noise. Not real ML -- just enough to drive
-    the pipeline end to end.
-    """
-
-    def predict(
-        self, obs_history: list[Observation], num_bands: int, top_k: int = 5
-    ) -> list[BandPrediction]:
-        scores: dict[int, float] = defaultdict(float)
-        for i, obs in enumerate(obs_history[-50:]):
-            if obs.detected:
-                recency_weight = 1.0 + i * 0.02
-                scores[obs.band] += recency_weight
-
-        # normalize + add a little exploration noise so untried bands
-        # occasionally surface
-        max_score = max(scores.values(), default=1.0)
-        results = []
-        for band in range(num_bands):
-            base = scores.get(band, 0.0) / max_score if max_score else 0.0
-            noise = random.uniform(0, 0.1)
-            prob = min(1.0, base * 0.85 + noise)
-            results.append(BandPrediction(band=band, probability=round(prob, 3)))
-
-        results.sort(key=lambda p: p.probability, reverse=True)
-        return results[:top_k]
+class PredictorNotAvailableError(RuntimeError):
+    """Raised when the smart_ml strategy is requested but no trained
+    model exists yet. The caller (scheduler_service / API routes) is
+    responsible for turning this into a clear user-facing message --
+    this is not a bug to silently work around by training on the spot."""
+    pass
 
 
-_predictor_instance: MockPredictor | None = None
+_predictor_instance = None
 
 
-def get_predictor() -> PredictorProtocol:
+def get_predictor() -> Predictor:
     global _predictor_instance
     if _predictor_instance is None:
-        _predictor_instance = MockPredictor()
+        fe = FeatureExtractor(window_size=WINDOW_SIZE, n_lags=N_LAGS)
+        try:
+            _predictor_instance = Predictor(DEFAULT_MODEL_NAME, fe)
+        except FileNotFoundError as exc:
+            raise PredictorNotAvailableError(
+                f"No trained model found for '{DEFAULT_MODEL_NAME}'. "
+                "Run `python3 scripts/train_predictor.py` from inside "
+                "smart-ew-scan-scheduler/ before starting the Smart ML "
+                "scheduler. Sequential and Random strategies do not "
+                "require a trained model and can be used immediately."
+            ) from exc
     return _predictor_instance

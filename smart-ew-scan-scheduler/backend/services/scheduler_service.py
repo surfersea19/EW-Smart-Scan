@@ -1,88 +1,39 @@
 """
-Scheduler service.
+scheduler_service.py -- REAL Person 2 integration.
 
-Person 2's territory: turns predictions into a next-scan decision, with
-some exploration/exploitation tradeoff. Also hosts the baseline strategies
-(sequential / random / priority) purely so the comparison feature works
-without needing Person 2's ML scheduler.
-
-TO INTEGRATE PERSON 2's REAL CODE:
-  Implement SchedulerProtocol for the "smart_ml" strategy, swap it in
-  get_scheduler(). Baseline strategies can stay as-is (they're Person 3's
-  responsibility for the comparison feature).
+Builds a SchedulerAdapter (integration/scheduler_adapter.py) wrapping a
+real Person 2 scheduler, ready to be passed as P1's SimulationEngine's
+`scheduler=` argument.
 """
-from __future__ import annotations
-import random
-from typing import Protocol
+from integration.repo_paths import register_p1_p2_on_path
+from integration.scheduler_adapter import SchedulerAdapter
+from services.prediction_service import get_predictor, PredictorNotAvailableError
 
-from schemas.prediction import BandPrediction
-from schemas.scheduler import SchedulerDecision
+register_p1_p2_on_path()
 
+from sequential_scheduler import SequentialScheduler  # noqa: E402
+from random_scheduler import RandomScheduler  # noqa: E402
+from smart_scheduler import SmartScheduler  # noqa: E402
 
-class SchedulerProtocol(Protocol):
-    def decide(
-        self,
-        predictions: list[BandPrediction],
-        current_band: int,
-        num_bands: int,
-        recently_scanned: set[int],
-    ) -> SchedulerDecision: ...
+__all__ = ["build_scheduler_adapter", "PredictorNotAvailableError"]
 
 
-class MockSmartScheduler:
-    """Epsilon-greedy: mostly exploit top prediction, sometimes explore."""
+def build_scheduler_adapter(strategy: str) -> SchedulerAdapter:
+    """
+    strategy: "sequential" | "random" | "smart_ml"
 
-    def __init__(self, epsilon: float = 0.15):
-        self.epsilon = epsilon
+    Raises PredictorNotAvailableError (propagated from prediction_service)
+    if "smart_ml" is requested and no trained model exists yet -- this is
+    NOT caught/retrained here, per the "no silent retraining" requirement.
+    """
+    if strategy == "sequential":
+        p2_scheduler = SequentialScheduler()
+    elif strategy == "random":
+        p2_scheduler = RandomScheduler()
+    elif strategy == "smart_ml":
+        predictor = get_predictor()  # raises PredictorNotAvailableError if untrained
+        p2_scheduler = SmartScheduler(predictor)
+    else:
+        raise ValueError(f"Unknown strategy: {strategy!r}")
 
-    def decide(
-        self,
-        predictions: list[BandPrediction],
-        current_band: int,
-        num_bands: int,
-        recently_scanned: set[int],
-    ) -> SchedulerDecision:
-        if predictions and random.random() > self.epsilon:
-            # prefer high-probability bands not scanned very recently
-            candidates = sorted(
-                predictions,
-                key=lambda p: p.probability - (0.3 if p.band in recently_scanned else 0),
-                reverse=True,
-            )
-            choice = candidates[0]
-            reason = "high predicted activity, not recently scanned"
-            return SchedulerDecision(next_band=choice.band, dwell_time=1, reason=reason)
-        band = random.randint(0, num_bands - 1)
-        return SchedulerDecision(next_band=band, dwell_time=1, reason="exploration")
-
-
-class SequentialScheduler:
-    def decide(self, predictions, current_band, num_bands, recently_scanned):
-        return SchedulerDecision(
-            next_band=(current_band + 1) % num_bands,
-            dwell_time=1,
-            reason="sequential sweep",
-        )
-
-
-class RandomScheduler:
-    def decide(self, predictions, current_band, num_bands, recently_scanned):
-        return SchedulerDecision(
-            next_band=random.randint(0, num_bands - 1),
-            dwell_time=1,
-            reason="random",
-        )
-
-
-_schedulers: dict[str, SchedulerProtocol] = {}
-
-
-def get_scheduler(strategy: str) -> SchedulerProtocol:
-    if strategy not in _schedulers:
-        if strategy == "sequential":
-            _schedulers[strategy] = SequentialScheduler()
-        elif strategy == "random":
-            _schedulers[strategy] = RandomScheduler()
-        else:  # "smart_ml" and fallback "priority" both use the smart mock for now
-            _schedulers[strategy] = MockSmartScheduler()
-    return _schedulers[strategy]
+    return SchedulerAdapter(p2_scheduler)

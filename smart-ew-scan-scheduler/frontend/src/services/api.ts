@@ -1,4 +1,4 @@
-import type { ScenarioConfig, ComparisonResult } from "../types/simulation";
+import type { ScenarioConfig, ComparisonResult, SimulationState } from "../types/simulation";
 
 const BASE_URL = "http://localhost:8000";
 
@@ -14,8 +14,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  start: () => request("/simulation/start", { method: "POST" }),
-  stop: () => request("/simulation/stop", { method: "POST" }),
+  start: () => request<{ running: boolean; completed: boolean }>("/simulation/start", { method: "POST" }),
+  stop: () => request<{ running: boolean; completed: boolean }>("/simulation/stop", { method: "POST" }),
   reset: (scenario?: ScenarioConfig) =>
     request("/simulation/reset", {
       method: "POST",
@@ -26,7 +26,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify(scenario),
     }),
-  getState: () => request("/simulation/state"),
+  getState: () => request<SimulationState>("/simulation/state"),
+  setSpeed: (speed: number) =>
+    request<{ playback_speed: number }>("/simulation/speed", {
+      method: "POST",
+      body: JSON.stringify({ speed }),
+    }),
   runComparison: (scenario: ScenarioConfig) =>
     request<ComparisonResult>("/comparison", {
       method: "POST",

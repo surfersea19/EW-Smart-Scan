@@ -1,139 +1,106 @@
 """
-Simulation service.
+simulation_service.py -- REAL Person 1 integration.
 
-This is Person 1's territory: RF environment, emitters, virtual receiver.
+Replaces the earlier MockSimulationEngine. Wraps P1's real
+ScenarioGenerator -> RFEnvironment -> VirtualReceiver -> SimulationEngine.
 
-`SimulationEngineProtocol` is the CONTRACT. `MockSimulationEngine` is a
-working stand-in so the rest of the system (backend orchestration +
-frontend) can be built and demoed independently.
+P1's SimulationEngine owns the only clock (see HANDOFF.md #4/#7 and
+simulation_engine.py -- `SimulationEngine.step()` internally drives
+`environment.step()` and `receiver.scan()` itself). This wrapper does
+not add a second clock -- `step_once()` calls P1's real `engine.step()`
+exactly once per call, nothing more.
 
-TO INTEGRATE PERSON 1's REAL CODE:
-  Implement SimulationEngineProtocol in their module, then swap the
-  instantiation in `get_simulation_engine()` below. Nothing else in the
-  backend should need to change.
+Band count is never hardcoded here: after building the real environment,
+`scenario.num_bands` is overwritten with `environment.spectrum.num_bands`
+-- the spectrum is the single source of truth (see integration analysis,
+"BAND CONFIGURATION").
 """
-from __future__ import annotations
-import random
-import math
-from typing import Protocol, Optional
+from integration.repo_paths import register_p1_p2_on_path
 
-from schemas.observation import Observation, GroundTruth
-from schemas.simulation import ScenarioConfig
+register_p1_p2_on_path()
 
+# Real Person 1 imports (path registered above; P1 uses relative imports
+# internally, so it must be imported as the `backend` package rooted at
+# smart-scan-person1/, exactly as register_p1_p2_on_path() sets up).
+from backend.environment.scenario_generator import (  # noqa: E402
+    ScenarioGenerator,
+    ScenarioConfig as P1ScenarioConfig,
+)
+from backend.environment.spectrum import SpectrumConfig  # noqa: E402
+from backend.receiver.virtual_receiver import VirtualReceiver  # noqa: E402
+from backend.receiver.noise_model import NoiseModel, NoiseConfig  # noqa: E402
+from backend.receiver.detection_model import DetectionModel, DetectionConfig  # noqa: E402
+from backend.simulation.simulation_engine import SimulationEngine  # noqa: E402
 
-class SimulationEngineProtocol(Protocol):
-    def reset(self, scenario: ScenarioConfig) -> None: ...
-    def step(self) -> None: ...
-    def tune(self, band: int) -> None: ...
-    def observe(self) -> Observation: ...
-    def ground_truth(self) -> GroundTruth: ...
+from schemas.simulation import ScenarioConfig as P3ScenarioConfig
 
-
-class _Emitter:
-    """Internal, ground-truth-only representation of a single emitter."""
-
-    def __init__(self, emitter_id: str, band: int, kind: str, num_bands: int):
-        self.id = emitter_id
-        self.home_band = band
-        self.kind = kind  # "periodic" | "agile" | "continuous"
-        self.num_bands = num_bands
-        self.period = random.randint(5, 20)
-        self.duty = random.uniform(0.2, 0.5)
-
-    def active_band(self, t: int) -> Optional[int]:
-        if self.kind == "continuous":
-            return self.home_band
-        if self.kind == "periodic":
-            phase = t % self.period
-            return self.home_band if phase < self.period * self.duty else None
-        if self.kind == "agile":
-            # Hops bands but stays "on" most of the time
-            if t % 3 == 0:
-                return (self.home_band + random.randint(-5, 5)) % self.num_bands
-            return self.home_band
-        return None
+# P3-side UI convenience mapping only -- P1's NoiseConfig takes a raw std
+# dev in dB; the frontend exposes a simpler low/medium/high control. This
+# mapping lives entirely in P3 and never touches P1's code or defaults.
+_NOISE_STD_BY_LEVEL = {"low": 1.5, "medium": 3.0, "high": 6.0}
 
 
-class MockSimulationEngine:
-    """
-    Lightweight stand-in for Person 1's real spectrum/emitter/receiver
-    simulation. Matches SimulationEngineProtocol.
-    """
+class RealSimulationEngine:
+    """P3-side wrapper around Person 1's real simulation stack."""
 
     def __init__(self):
-        self.scenario = ScenarioConfig()
-        self.time = 0
-        self.emitters: list[_Emitter] = []
-        self.current_band: int = 0
-        self._noise_std = {"low": 3.0, "medium": 6.0, "high": 10.0}
+        self.environment = None
+        self.receiver = None
+        self.engine = None
+        self.scenario: P3ScenarioConfig = P3ScenarioConfig()
 
-    def reset(self, scenario: ScenarioConfig) -> None:
+    def reset(self, scenario: P3ScenarioConfig, p1_scheduler) -> None:
+        """
+        p1_scheduler: any object implementing Person 1's Scheduler ABC
+        (a `choose_band(t, observation_log, spectrum) -> int` method) --
+        in practice always a SchedulerAdapter wrapping a Person 2
+        scheduler (see integration/scheduler_adapter.py).
+        """
+        p1_config = P1ScenarioConfig(
+            seed=getattr(scenario, "seed", 0),
+            spectrum_config=SpectrumConfig(num_bands=scenario.num_bands),
+            num_emitters=scenario.num_emitters,
+        )
+        generator = ScenarioGenerator(p1_config)
+        self.environment = generator.generate()
+
+        noise_std = _NOISE_STD_BY_LEVEL.get(scenario.noise_level, 3.0)
+        noise = NoiseModel(NoiseConfig(noise_std_db=noise_std, seed=getattr(scenario, "seed", 0)))
+        detector = DetectionModel(noise, DetectionConfig())
+        self.receiver = VirtualReceiver(self.environment, detection_model=detector)
+        self.engine = SimulationEngine(self.environment, self.receiver, scheduler=p1_scheduler)
+
+        # Read the real band count back from the spectrum -- never trust
+        # a separately tracked P3 number as the source of truth.
+        scenario.num_bands = self.environment.spectrum.num_bands
         self.scenario = scenario
-        self.time = 0
-        self.current_band = 0
-        kinds = ["periodic", "agile", "continuous"]
-        self.emitters = [
-            _Emitter(
-                emitter_id=f"E{i+1}",
-                band=random.randint(0, scenario.num_bands - 1),
-                kind=random.choice(kinds),
-                num_bands=scenario.num_bands,
-            )
-            for i in range(scenario.num_emitters)
-        ]
 
-    def step(self) -> None:
-        self.time += 1
+    def step_once(self):
+        """One scheduler decision. May internally cost more than one raw
+        simulation tick if tuning_time/dwell_time > 1 (P1's real timing
+        model, untouched). Returns the list of new Observations produced
+        (normally length 1 with default receiver config)."""
+        return self.engine.step()
 
-    def tune(self, band: int) -> None:
-        self.current_band = band % max(self.scenario.num_bands, 1)
-
-    def _active_bands_now(self) -> list[int]:
-        bands = set()
-        for e in self.emitters:
-            b = e.active_band(self.time)
-            if b is not None:
-                bands.add(b)
-        return sorted(bands)
-
-    def observe(self) -> Observation:
-        active = self._active_bands_now()
-        detected = self.current_band in active
-        noise = self._noise_std.get(self.scenario.noise_level, 6.0)
-        power = None
-        pulse_width = None
-        pri = None
-        if detected:
-            power = round(-40 + random.gauss(0, noise / 3), 1)
-            pulse_width = round(random.uniform(2, 15), 1)
-            pri = round(random.uniform(50, 200), 1)
-        return Observation(
-            time=self.time,
-            band=self.current_band,
-            detected=detected,
-            power=power,
-            pulse_width=pulse_width,
-            pri=pri,
-        )
-
-    def ground_truth(self) -> GroundTruth:
-        active = self._active_bands_now()
-        active_emitters = [
-            e.id for e in self.emitters if e.active_band(self.time) is not None
-        ]
-        return GroundTruth(
-            time=self.time, active_bands=active, active_emitters=active_emitters
-        )
+    @property
+    def current_time(self) -> int:
+        """
+        P1's real, single authoritative clock (SimulationEngine.current_time
+        -- raw ticks, incremented once per environment.step() call inside
+        P1's own step(), whether during a tuning-blind tick or a dwell/
+        observation tick). This is the ONLY time value P3 is allowed to
+        consult to decide whether ScenarioConfig.duration has been
+        reached (see orchestrator.py) -- P3 introduces no clock of its
+        own anywhere.
+        """
+        return self.engine.current_time
 
 
-_engine_instance: Optional[MockSimulationEngine] = None
+_engine_instance = None
 
 
-def get_simulation_engine() -> SimulationEngineProtocol:
-    """
-    Single place to swap MockSimulationEngine -> Person 1's real engine.
-    """
+def get_simulation_engine() -> RealSimulationEngine:
     global _engine_instance
     if _engine_instance is None:
-        _engine_instance = MockSimulationEngine()
+        _engine_instance = RealSimulationEngine()
     return _engine_instance

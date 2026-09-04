@@ -6,7 +6,7 @@ from services.orchestrator import get_orchestrator
 
 router = APIRouter()
 
-TICK_INTERVAL_SECONDS = 0.4  # ~2.5 ticks/sec -- readable for a demo, not overwhelming
+BASE_INTERVAL_SECONDS = 1.0  # 1x = 1.0s/tick; 5x = 0.2s/tick; 10x = 0.1s/tick
 
 _connected: set[WebSocket] = set()
 
@@ -40,12 +40,15 @@ async def simulation_loop():
     """
     Background task, started once at app startup. Only ticks the
     orchestrator forward when state.running is True, and only broadcasts
-    when there's at least one connected client.
+    when there's at least one connected client. Pacing is adjusted based
+    on orch.playback_speed (wall-clock execution speed only).
     """
-    orch = get_orchestrator()
     while True:
+        orch = get_orchestrator()
         if orch.state.running:
             delta = orch.tick()
             if _connected:
                 await broadcast(json.loads(delta.model_dump_json()))
-        await asyncio.sleep(TICK_INTERVAL_SECONDS)
+        speed = getattr(orch, "playback_speed", 5)
+        interval = BASE_INTERVAL_SECONDS / max(speed, 1)
+        await asyncio.sleep(interval)
