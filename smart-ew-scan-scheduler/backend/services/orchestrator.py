@@ -24,6 +24,10 @@ look-ahead; the frontend's "Scheduler Decision" panel is relabeled
 accordingly (see frontend changes) to describe why this tick's band was
 chosen, not to promise a preview of the future.
 """
+import logging
+from uuid import uuid4
+
+from knowledge import PersistentKnowledgeStore, build_knowledge
 from schemas.simulation import (
     ScenarioConfig,
     SimulationState,
@@ -44,6 +48,7 @@ from integration.evaluation_adapter import (
 
 TOP_K_PREDICTIONS = 5
 TOP_K_PREDICTED_ACTIVITY = 3
+logger = logging.getLogger(__name__)
 
 
 class SimulationOrchestrator:
@@ -52,6 +57,7 @@ class SimulationOrchestrator:
         self.scheduler_adapter = None
         self.live_metrics: LiveMetricsTracker | None = None
         self.playback_speed: int = 5
+        self._completed_run_knowledge_saved = False
 
     def reset(self, scenario: ScenarioConfig) -> None:
         """
@@ -61,6 +67,7 @@ class SimulationOrchestrator:
         which turns it into a clear HTTP error instead of silently
         training on the spot.
         """
+        self._completed_run_knowledge_saved = False
         self.scheduler_adapter = scheduler_service.build_scheduler_adapter(
             scenario.strategy,
             scheduler_seed=scenario.scheduler_seed,
@@ -82,6 +89,28 @@ class SimulationOrchestrator:
             running=False,
             completed=False,
         )
+
+    def _save_completed_run_knowledge(self) -> None:
+        """Persist receiver-observation evidence once after duration completion."""
+        if self._completed_run_knowledge_saved:
+            return
+
+        try:
+            engine = simulation_service.get_simulation_engine()
+            knowledge = build_knowledge(
+                history_manager=self.scheduler_adapter._hm,
+                current_time=engine.current_time,
+                run_id=str(uuid4()),
+                num_bands=self.scenario.num_bands,
+                scenario_seed=self.scenario.scenario_seed,
+                noise_level=self.scenario.noise_level,
+            )
+            PersistentKnowledgeStore().save(knowledge)
+        except Exception:
+            logger.warning("Could not persist completed run knowledge", exc_info=True)
+            return
+
+        self._completed_run_knowledge_saved = True
 
     def set_playback_speed(self, speed: int) -> None:
         self.playback_speed = max(1, speed)
@@ -174,6 +203,7 @@ class SimulationOrchestrator:
         # metrics finalization is identical to a manual /stop -- see
         # pause()'s own finalize() call above.
         if engine.current_time >= self.scenario.duration:
+            self._save_completed_run_knowledge()
             self.pause()
             self.state.completed = True
         else:
