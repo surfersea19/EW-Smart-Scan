@@ -68,6 +68,7 @@ class SimulationState(BaseModel):
     """
     running: bool = False
     completed: bool = False
+    knowledge_status: Literal["cold", "warm"] = "cold"
     scenario: ScenarioConfig = ScenarioConfig()
     simulation_time: int = 0
     current_band: Optional[int] = None

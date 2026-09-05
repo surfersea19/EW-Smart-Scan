@@ -244,3 +244,39 @@ def test_persistence_failure_does_not_crash_or_mark_snapshot_saved(monkeypatch, 
 
     assert orchestrator._completed_run_knowledge_saved is False
     assert "Could not persist completed run knowledge" in caplog.text
+
+
+def test_reset_reports_warm_when_compatible_smart_ml_knowledge_exists(monkeypatch) -> None:
+    knowledge = sample_knowledge()
+    orchestrator, _ = make_reset_orchestrator(
+        monkeypatch,
+        SimpleNamespace(load=lambda: knowledge),
+    )
+
+    orchestrator.reset(ScenarioConfig(strategy="smart_ml", num_bands=64))
+
+    assert orchestrator.state.knowledge_status == "warm"
+
+
+def test_reset_reports_cold_when_band_count_is_incompatible(monkeypatch) -> None:
+    knowledge = sample_knowledge()
+    orchestrator, _ = make_reset_orchestrator(
+        monkeypatch,
+        SimpleNamespace(load=lambda: knowledge),
+    )
+
+    orchestrator.reset(ScenarioConfig(strategy="smart_ml", num_bands=180))
+
+    assert orchestrator.state.knowledge_status == "cold"
+
+
+def test_reset_reports_cold_when_knowledge_exists_but_strategy_is_not_smart_ml(monkeypatch) -> None:
+    knowledge = sample_knowledge()
+    orchestrator, _ = make_reset_orchestrator(
+        monkeypatch,
+        SimpleNamespace(load=lambda: knowledge),
+    )
+
+    orchestrator.reset(ScenarioConfig(strategy="sequential", num_bands=64))
+
+    assert orchestrator.state.knowledge_status == "cold"

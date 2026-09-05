@@ -17,6 +17,7 @@ export function Dashboard() {
   const setScenario = useSimulationStore((s) => s.setScenario);
   const setRunning = useSimulationStore((s) => s.setRunning);
   const setCompleted = useSimulationStore((s) => s.setCompleted);
+  const setKnowledgeStatus = useSimulationStore((s) => s.setKnowledgeStatus);
   const socketRef = useRef<SimulationSocket | null>(null);
 
   useEffect(() => {
@@ -40,9 +41,15 @@ export function Dashboard() {
         setScenario(state.scenario);
         setRunning(state.running);
         setCompleted(state.completed);
+        setKnowledgeStatus(state.knowledge_status);
       })
       .catch((err) => console.error("Failed to fetch initial backend state", err));
-  }, [setScenario, setRunning, setCompleted]);
+  }, [
+    setScenario,
+    setRunning,
+    setCompleted,
+    setKnowledgeStatus,
+  ]);
 
   return (
     <div className="min-h-screen p-6 max-w-7xl mx-auto">
