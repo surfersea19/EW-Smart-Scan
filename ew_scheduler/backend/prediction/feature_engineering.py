@@ -1,5 +1,6 @@
 import math
 from history_manager import BandHistoryManager
+from periodicity_detector import PeriodicityDetector
 
 UNKNOWN_TIME     = 9999.0
 UNKNOWN_POWER    = -100.0
@@ -14,10 +15,17 @@ class FeatureExtractor:
     No ground truth. No emitter IDs. No future information.
     """
 
-    def __init__(self, window_size: int = 10, n_lags: int = 3, tau: float = DEFAULT_TAU):
+    def __init__(
+        self,
+        window_size: int = 10,
+        n_lags: int = 3,
+        tau: float = DEFAULT_TAU,
+        periodicity_detector: PeriodicityDetector = None,
+    ):
         self.window_size = window_size
         self.n_lags = n_lags
         self.tau = tau
+        self.periodicity_detector = periodicity_detector or PeriodicityDetector()
 
     def _compute_decayed_hit_sum(
         self,
@@ -111,7 +119,15 @@ class FeatureExtractor:
         right_activity = self._compute_decayed_hit_sum(band + 1, history_manager, current_time)
         features["adjacent_band_activity"] = max(left_activity, right_activity)
 
-        # --- Group 8: Lag features ---
+        # --- Group 8: Temporal / Periodic behavior features ---
+        period_res = self.periodicity_detector.analyze_band(history_manager, band, current_time)
+        features["estimated_period"]      = float(period_res.estimated_period)
+        features["period_regularity"]     = float(period_res.period_regularity)
+        features["time_to_next_expected"] = float(period_res.time_to_next)
+        features["temporal_proximity"]    = float(period_res.temporal_proximity)
+        features["recurrence_score"]      = float(period_res.recurrence_score)
+
+        # --- Group 9: Lag features ---
         for lag_index in range(1, self.n_lags + 1):
             feature_name = f"lag_{lag_index}"
             position     = -lag_index
@@ -137,6 +153,11 @@ class FeatureExtractor:
             "consecutive_hits",
             "consecutive_misses",
             "adjacent_band_activity",
+            "estimated_period",
+            "period_regularity",
+            "time_to_next_expected",
+            "temporal_proximity",
+            "recurrence_score",
         ]
         lags = [f"lag_{i}" for i in range(1, self.n_lags + 1)]
         return base + lags

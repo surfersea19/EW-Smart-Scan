@@ -116,7 +116,7 @@ class Predictor:
         print(f"  {'Band':<8} {'P(active)':<12} Confidence")
         print(f"  {'-'*35}")
         for band, prob in ranked[:top_n]:
-            bar        = "█" * int(prob * 20)
+            bar        = "#" * int(prob * 20)
             confidence = ("HIGH" if abs(prob - 0.5) > 0.3 else
                           "MED"  if abs(prob - 0.5) > 0.15 else "LOW")
             print(f"  {band:<8} {prob:<12.3f} {confidence}  {bar}")

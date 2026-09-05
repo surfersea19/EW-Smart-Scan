@@ -8,7 +8,7 @@ if PRED_DIR not in sys.path:
     sys.path.insert(0, PRED_DIR)
 
 from history_manager import BandHistoryManager
-from feature_engineering import FeatureExtractor, UNKNOWN_POWER
+from feature_engineering import FeatureExtractor, UNKNOWN_POWER, UNKNOWN_TIME
 
 
 def test_time_decay_monotonic():
@@ -161,3 +161,46 @@ def test_unknown_power_not_stronger_than_real_signal():
     assert f_unobserved["last_power"] < f_detected["last_power"], (
         "Unobserved band power must be lower than real detected signal power"
     )
+
+
+def test_temporal_features_cold_start():
+    """Test G: Temporal features during cold start (no detections)."""
+    fe = FeatureExtractor()
+    hm = BandHistoryManager()
+
+    f = fe.extract(12, hm, current_time=1)
+    assert f["estimated_period"] == 0.0
+    assert f["period_regularity"] == 0.0
+    assert f["time_to_next_expected"] == UNKNOWN_TIME
+    assert f["temporal_proximity"] == 0.0
+    assert f["recurrence_score"] == 0.0
+    assert not any(math.isnan(v) for v in f.values())
+
+
+def test_temporal_features_periodic_band():
+    """Test H: Temporal features extraction for a periodic pattern."""
+    fe = FeatureExtractor()
+    hm = BandHistoryManager()
+
+    hm.ingest({"time": 10, "band": 15, "detected": True})
+    hm.ingest({"time": 20, "band": 15, "detected": True})
+    hm.ingest({"time": 30, "band": 15, "detected": True})
+
+    # At t=30 (hit time)
+    f_t30 = fe.extract(15, hm, current_time=30)
+    assert f_t30["estimated_period"] == 10.0
+    assert f_t30["period_regularity"] == 1.0
+    assert f_t30["time_to_next_expected"] == 0.0
+    assert f_t30["temporal_proximity"] == pytest.approx(1.0, abs=1e-3)
+    assert f_t30["recurrence_score"] > 0.5
+
+    # At t=35 (halfway to next pulse)
+    f_t35 = fe.extract(15, hm, current_time=35)
+    assert f_t35["estimated_period"] == 10.0
+    assert f_t35["time_to_next_expected"] == 5.0
+    assert f_t35["temporal_proximity"] < 0.1
+
+    # At t=40 (next pulse)
+    f_t40 = fe.extract(15, hm, current_time=40)
+    assert f_t40["time_to_next_expected"] == 0.0
+    assert f_t40["temporal_proximity"] == pytest.approx(1.0, abs=1e-3)
