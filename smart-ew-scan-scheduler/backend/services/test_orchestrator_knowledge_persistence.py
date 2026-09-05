@@ -9,6 +9,7 @@ register_p1_p2_on_path()
 from history_manager import BandHistoryManager  # noqa: E402
 from schemas.simulation import Metrics, ScenarioConfig  # noqa: E402
 from services import orchestrator as orchestrator_module  # noqa: E402
+from knowledge import BandKnowledge, PersistentKnowledge  # noqa: E402
 
 
 class RecordingStore:
@@ -17,6 +18,46 @@ class RecordingStore:
 
     def save(self, knowledge) -> None:
         self.saved.append(knowledge)
+
+
+def make_reset_orchestrator(monkeypatch, store):
+    orchestrator = orchestrator_module.SimulationOrchestrator()
+    adapter = SimpleNamespace(_hm=BandHistoryManager())
+    engine = SimpleNamespace()
+
+    def reset_engine(scenario, scheduler_adapter) -> None:
+        engine.scenario = scenario
+
+    engine.reset = reset_engine
+    monkeypatch.setattr(
+        orchestrator_module.scheduler_service,
+        "build_scheduler_adapter",
+        lambda *args, **kwargs: adapter,
+    )
+    monkeypatch.setattr(orchestrator_module.simulation_service, "get_simulation_engine", lambda: engine)
+    monkeypatch.setattr(orchestrator_module, "PersistentKnowledgeStore", lambda: store)
+    return orchestrator, adapter
+
+
+def sample_knowledge() -> PersistentKnowledge:
+    return PersistentKnowledge(
+        schema_version=1,
+        source_run_id="previous-run",
+        created_at="2026-09-05T12:00:00+00:00",
+        num_bands=64,
+        bands=[
+            BandKnowledge(
+                band_id=12,
+                observation_count=3,
+                hit_count=1,
+                hit_ratio=1 / 3,
+                last_hit_time=3,
+                last_scan_time=5,
+                confidence=0.3,
+                last_updated_time=5,
+            )
+        ],
+    )
 
 
 def make_completed_orchestrator(monkeypatch, store: RecordingStore):
@@ -99,21 +140,55 @@ def test_manual_pause_does_not_save_knowledge(monkeypatch) -> None:
 
 
 def test_reset_clears_completed_run_save_flag(monkeypatch) -> None:
-    orchestrator = orchestrator_module.SimulationOrchestrator()
+    store = SimpleNamespace(load=lambda: None)
+    orchestrator, _ = make_reset_orchestrator(monkeypatch, store)
     orchestrator._completed_run_knowledge_saved = True
-    adapter = SimpleNamespace()
-    engine = SimpleNamespace()
-
-    def reset_engine(scenario, scheduler_adapter) -> None:
-        engine.scenario = scenario
-
-    engine.reset = reset_engine
-    monkeypatch.setattr(orchestrator_module.scheduler_service, "build_scheduler_adapter", lambda *args, **kwargs: adapter)
-    monkeypatch.setattr(orchestrator_module.simulation_service, "get_simulation_engine", lambda: engine)
 
     orchestrator.reset(ScenarioConfig(strategy="sequential"))
 
     assert orchestrator._completed_run_knowledge_saved is False
+
+
+def test_reset_loads_valid_prior_knowledge_without_populating_run_history(monkeypatch) -> None:
+    knowledge = sample_knowledge()
+    orchestrator, adapter = make_reset_orchestrator(
+        monkeypatch,
+        SimpleNamespace(load=lambda: knowledge),
+    )
+
+    orchestrator.reset(ScenarioConfig(strategy="sequential"))
+
+    assert orchestrator.loaded_prior_knowledge == knowledge
+    assert adapter._hm.observed_bands() == []
+
+
+def test_reset_with_no_persisted_knowledge_uses_cold_start(monkeypatch) -> None:
+    orchestrator, _ = make_reset_orchestrator(monkeypatch, SimpleNamespace(load=lambda: None))
+
+    orchestrator.reset(ScenarioConfig(strategy="sequential"))
+
+    assert orchestrator.loaded_prior_knowledge is None
+
+
+def test_reset_discards_malformed_knowledge_and_continues(monkeypatch, caplog) -> None:
+    def load() -> None:
+        raise ValueError("invalid persisted knowledge")
+
+    orchestrator, _ = make_reset_orchestrator(monkeypatch, SimpleNamespace(load=load))
+
+    orchestrator.reset(ScenarioConfig(strategy="sequential"))
+
+    assert orchestrator.loaded_prior_knowledge is None
+    assert "Could not load persistent knowledge" in caplog.text
+
+
+def test_reset_replaces_old_prior_knowledge_when_store_is_empty(monkeypatch) -> None:
+    orchestrator, _ = make_reset_orchestrator(monkeypatch, SimpleNamespace(load=lambda: None))
+    orchestrator.loaded_prior_knowledge = sample_knowledge()
+
+    orchestrator.reset(ScenarioConfig(strategy="sequential"))
+
+    assert orchestrator.loaded_prior_knowledge is None
 
 
 def test_completed_knowledge_contains_only_observed_band_evidence(monkeypatch) -> None:

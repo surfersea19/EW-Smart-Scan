@@ -27,7 +27,7 @@ chosen, not to promise a preview of the future.
 import logging
 from uuid import uuid4
 
-from knowledge import PersistentKnowledgeStore, build_knowledge
+from knowledge import PersistentKnowledge, PersistentKnowledgeStore, build_knowledge
 from schemas.simulation import (
     ScenarioConfig,
     SimulationState,
@@ -58,6 +58,7 @@ class SimulationOrchestrator:
         self.live_metrics: LiveMetricsTracker | None = None
         self.playback_speed: int = 5
         self._completed_run_knowledge_saved = False
+        self.loaded_prior_knowledge: PersistentKnowledge | None = None
 
     def reset(self, scenario: ScenarioConfig) -> None:
         """
@@ -68,6 +69,7 @@ class SimulationOrchestrator:
         training on the spot.
         """
         self._completed_run_knowledge_saved = False
+        self._load_prior_knowledge()
         self.scheduler_adapter = scheduler_service.build_scheduler_adapter(
             scenario.strategy,
             scheduler_seed=scenario.scheduler_seed,
@@ -89,6 +91,14 @@ class SimulationOrchestrator:
             running=False,
             completed=False,
         )
+
+    def _load_prior_knowledge(self) -> None:
+        """Load prior evidence without modifying the new run's scheduler state."""
+        self.loaded_prior_knowledge = None
+        try:
+            self.loaded_prior_knowledge = PersistentKnowledgeStore().load()
+        except Exception:
+            logger.warning("Could not load persistent knowledge", exc_info=True)
 
     def _save_completed_run_knowledge(self) -> None:
         """Persist receiver-observation evidence once after duration completion."""
