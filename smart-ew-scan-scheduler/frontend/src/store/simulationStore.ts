@@ -36,8 +36,6 @@ interface SimulationStore {
   resetHistory: () => void;
 }
 
-const HISTORY_LIMIT = 60;
-
 const emptyMetrics: Metrics = {
   ticks_run: 0,
   hits: 0,
@@ -115,8 +113,7 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
           detected: d.detected,
           power: d.power ?? null,
           activeEmitters: d.active_emitters ?? [],
-        },
-      ].slice(-HISTORY_LIMIT),
+        }],
     })),
 
   resetHistory: () =>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSimulationStore } from "../store/simulationStore";
 import type { ActiveEmitter } from "../types/simulation";
 
@@ -20,12 +20,20 @@ export function Waterfall() {
   const running = useSimulationStore((s) => s.running);
 
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (running && container) {
+      container.scrollLeft = container.scrollWidth - container.clientWidth;
+    }
+  }, [history.length, running]);
 
   // SVG coordinate dimensions
   const viewWidth = 760;
   const viewHeight = 290;
   const margin = { top: 15, right: 35, bottom: 42, left: 52 };
-  const plotWidth = viewWidth - margin.left - margin.right;
+  const basePlotWidth = viewWidth - margin.left - margin.right;
   const plotHeight = viewHeight - margin.top - margin.bottom;
 
   // Maximum bands is numBands (0 to numBands - 1). Highest index is B(numBands - 1)
@@ -49,11 +57,15 @@ export function Waterfall() {
     yTicks.push(0); // B0
   }
 
-  // Display columns: up to last 45 time steps (or pad if history is short)
-  const displayHistory = history.slice(-45);
+  // Display all time steps. The timeline grows horizontally after 45 columns,
+  // preserving the existing column density instead of compressing history.
+  const displayHistory = history;
   const minColumns = 30;
   const totalColumns = Math.max(displayHistory.length, minColumns);
-  const colWidth = plotWidth / totalColumns;
+  const visibleColumns = Math.min(totalColumns, 45);
+  const colWidth = basePlotWidth / visibleColumns;
+  const plotWidth = Math.max(basePlotWidth, totalColumns * colWidth);
+  const timelineWidth = margin.left + plotWidth + margin.right;
 
   // X position helper
   const getXForIndex = (index: number) => margin.left + index * colWidth;
@@ -80,10 +92,15 @@ export function Waterfall() {
       </div>
 
       {/* Waterfall Visualization Area */}
-      <div className="relative w-full overflow-hidden bg-slate-950/80 rounded border border-slate-800/80">
+      <div
+        ref={scrollContainerRef}
+        className="relative w-full overflow-x-auto overflow-y-hidden bg-slate-950/80 rounded border border-slate-800/80"
+      >
         <svg
-          viewBox={`0 0 ${viewWidth} ${viewHeight}`}
-          className="w-full h-auto select-none"
+          viewBox={`0 0 ${timelineWidth} ${viewHeight}`}
+          width={timelineWidth}
+          height={viewHeight}
+          className="block select-none"
           onMouseLeave={() => setTooltip(null)}
         >
           {/* Background Grid Area */}
