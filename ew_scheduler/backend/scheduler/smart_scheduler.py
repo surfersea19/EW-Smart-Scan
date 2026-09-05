@@ -54,6 +54,9 @@ class SmartScheduler(BaseScheduler):
         # Bounded Discovery parameters
         discovery_interval: int = 5,
         discovery_candidate_timeout: int = 50,
+        # Persistent prior evidence parameters
+        prior_knowledge=None,
+        warm_prior_weight: float = 0.05,
     ):
         self.predictor = predictor
         self.w_prob = w_prob
@@ -91,6 +94,21 @@ class SmartScheduler(BaseScheduler):
         # Bounded Discovery parameters
         self.discovery_interval = discovery_interval
         self.discovery_candidate_timeout = discovery_candidate_timeout
+
+        # Prior evidence is intentionally a small, bounded score bonus.
+        # It is not a probability and cannot replace current-run ML or
+        # observation-driven scheduling signals. P3 passes this only after
+        # validating that its band count matches the current spectrum.
+        self.warm_prior_weight = warm_prior_weight
+        self._warm_prior_by_band: dict[int, float] = {}
+        if prior_knowledge is not None:
+            for band_knowledge in getattr(prior_knowledge, "bands", []):
+                band_id = getattr(band_knowledge, "band_id", None)
+                hit_ratio = getattr(band_knowledge, "hit_ratio", 0.0)
+                confidence = getattr(band_knowledge, "confidence", 0.0)
+                if isinstance(band_id, int):
+                    evidence_strength = max(0.0, min(hit_ratio * confidence, 1.0))
+                    self._warm_prior_by_band[band_id] = evidence_strength
 
         # Internal state
         self._last_scanned = None
@@ -273,13 +291,17 @@ class SmartScheduler(BaseScheduler):
         exploration_bonus = self.exploration_bonus_weight * exploration_ratio
         score += exploration_bonus
 
-        # 5. Active-band memory priority bonus & dwell lock
+        # 5. Persistent evidence bonus. This carries no timestamp into the
+        # current run and applies only to bands observed in the prior snapshot.
+        score += self.warm_prior_weight * self._warm_prior_by_band.get(band, 0.0)
+
+        # 6. Active-band memory priority bonus & dwell lock
         if band in self._active_memory:
             score += self.w_active
             if band == self._last_scanned and self._tracking_dwell < self.tracking_dwell_limit:
                 score += self.tracking_dwell_bonus
 
-        # 6. Penalties for currently selected band
+        # 7. Penalties for currently selected band
         if band == self._last_scanned:
             # Immediate rescan penalty scaled by (1.0 - prob)
             score -= self.w_recent * (1.0 - prob)

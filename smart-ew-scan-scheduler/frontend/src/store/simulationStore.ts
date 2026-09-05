@@ -13,6 +13,7 @@ interface SimulationStore {
   connected: boolean;
   running: boolean;
   completed: boolean;
+  knowledgeStatus: "cold" | "warm";
   scenario: ScenarioConfig;
   playbackSpeed: number;
   time: number;
@@ -30,6 +31,7 @@ interface SimulationStore {
   setConnected: (c: boolean) => void;
   setRunning: (r: boolean) => void;
   setCompleted: (c: boolean) => void;
+  setKnowledgeStatus: (status: "cold" | "warm") => void;
   setScenario: (s: ScenarioConfig) => void;
   setPlaybackSpeed: (speed: number) => void;
   applyDelta: (d: WSDelta) => void;
@@ -51,8 +53,9 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
   connected: false,
   running: false,
   completed: false,
+  knowledgeStatus: "cold",
   scenario: {
-    num_bands: 180, // matches Person 1's real SpectrumConfig default; overwritten on reset regardless
+    num_bands: 180,
     num_emitters: 5,
     duration: 300,
     noise_level: "medium",
@@ -78,6 +81,7 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
   setConnected: (connected) => set({ connected }),
   setRunning: (running) => set({ running }),
   setCompleted: (completed) => set({ completed }),
+  setKnowledgeStatus: (knowledgeStatus) => set({ knowledgeStatus }),
   setScenario: (scenario) =>
     set((state) => ({
       scenario,
@@ -100,7 +104,6 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
       schedulerReason: d.scheduler_reason ?? null,
       predictedActivity: d.predicted_activity,
       metrics: d.metrics,
-      // Reconcile "running" and "completed" from backend delta
       running: d.running,
       completed: d.completed ?? (d.time >= state.scenario.duration),
       playbackSpeed: d.playback_speed ?? state.playbackSpeed,
@@ -113,7 +116,8 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
           detected: d.detected,
           power: d.power ?? null,
           activeEmitters: d.active_emitters ?? [],
-        }],
+        },
+      ],
     })),
 
   resetHistory: () =>
@@ -121,6 +125,7 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
       history: [],
       time: 0,
       completed: false,
+      knowledgeStatus: "cold",
       currentBand: null,
       detected: null,
       power: null,

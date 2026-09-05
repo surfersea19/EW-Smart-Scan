@@ -13,15 +13,36 @@ export function SimulationControls() {
   const setCompleted = useSimulationStore((s) => s.setCompleted);
   const resetHistory = useSimulationStore((s) => s.resetHistory);
   const connected = useSimulationStore((s) => s.connected);
+  const knowledgeStatus = useSimulationStore((s) => s.knowledgeStatus);
+  const setKnowledgeStatus = useSimulationStore((s) => s.setKnowledgeStatus);
 
-  const update = (patch: Partial<ScenarioConfig>) => {
+  const syncBackendState = async () => {
+    try {
+      const state = await api.getState();
+      setScenario(state.scenario);
+      setRunning(state.running);
+      setCompleted(state.completed);
+      setKnowledgeStatus(state.knowledge_status);
+    } catch (err) {
+      console.error("Failed to sync backend state", err);
+    }
+  };
+
+  const update = async (patch: Partial<ScenarioConfig>) => {
     const next = { ...scenario, ...patch };
+
     setScenario(next);
     setRunning(false);
     setCompleted(false);
-    // reset picks up the new scenario immediately
-    api.reset(next).catch(console.error);
-    resetHistory();
+
+    try {
+      // reset picks up the new scenario immediately
+      await api.reset(next);
+      resetHistory();
+      await syncBackendState();
+    } catch (err) {
+      console.error("Failed to update simulation scenario", err);
+    }
   };
 
   const handleSpeedChange = (speed: number) => {
@@ -56,6 +77,7 @@ export function SimulationControls() {
       resetHistory();
       setRunning(false);
       setCompleted(false);
+      await syncBackendState();
     } catch (err) {
       console.error("Failed to reset simulation", err);
     }
@@ -67,12 +89,24 @@ export function SimulationControls() {
         <h3 className="text-sm font-mono text-slate-400 uppercase tracking-wide">
           Scenario Controls
         </h3>
+
         <div className="flex items-center gap-2">
           {completed && (
             <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-accent/20 text-accent font-semibold">
               COMPLETED
             </span>
           )}
+
+          <span
+            className={`text-xs font-mono px-2 py-0.5 rounded-full ${
+              knowledgeStatus === "warm"
+                ? "bg-hit/20 text-hit"
+                : "bg-slate-700 text-slate-300"
+            }`}
+          >
+            {knowledgeStatus === "warm" ? "WARM" : "COLD"}
+          </span>
+
           <span
             className={`text-xs font-mono px-2 py-0.5 rounded-full ${
               connected ? "bg-hit/20 text-hit" : "bg-miss/20 text-miss"
@@ -93,6 +127,7 @@ export function SimulationControls() {
             onChange={(e) => update({ num_bands: Number(e.target.value) })}
           />
         </label>
+
         <label className="flex flex-col gap-1">
           Emitters
           <input
@@ -102,62 +137,81 @@ export function SimulationControls() {
             onChange={(e) => update({ num_emitters: Number(e.target.value) })}
           />
         </label>
+
         <label className="flex flex-col gap-1">
           Noise
           <select
             className="bg-slate-800 rounded px-2 py-1"
             value={scenario.noise_level}
-            onChange={(e) => update({ noise_level: e.target.value as NoiseLevel })}
+            onChange={(e) =>
+              update({ noise_level: e.target.value as NoiseLevel })
+            }
           >
             <option value="low">Low</option>
             <option value="medium">Medium</option>
             <option value="high">High</option>
           </select>
         </label>
+
         <label className="flex flex-col gap-1">
           Strategy
           <select
             className="bg-slate-800 rounded px-2 py-1"
             value={scenario.strategy}
-            onChange={(e) => update({ strategy: e.target.value as Strategy })}
+            onChange={(e) =>
+              update({ strategy: e.target.value as Strategy })
+            }
           >
             <option value="smart_ml">Smart ML</option>
             <option value="sequential">Sequential</option>
             <option value="random">Random</option>
           </select>
         </label>
+
         <label className="flex flex-col gap-1">
           Scenario Seed
           <input
             type="number"
             className="bg-slate-800 rounded px-2 py-1"
             value={scenario.scenario_seed}
-            onChange={(e) => update({ scenario_seed: Number(e.target.value) })}
+            onChange={(e) =>
+              update({ scenario_seed: Number(e.target.value) })
+            }
           />
         </label>
+
         <label className="flex flex-col gap-1">
           Scheduler Seed
           <input
             type="number"
             className="bg-slate-800 rounded px-2 py-1"
             value={scenario.scheduler_seed}
-            onChange={(e) => update({ scheduler_seed: Number(e.target.value) })}
+            onChange={(e) =>
+              update({ scheduler_seed: Number(e.target.value) })
+            }
           />
         </label>
+
         <label className="flex flex-col gap-1 col-span-2">
           Model
           <select
             className="bg-slate-800 rounded px-2 py-1"
             value={scenario.model_name}
-            onChange={(e) => update({ model_name: e.target.value as ScenarioConfig["model_name"] })}
+            onChange={(e) =>
+              update({
+                model_name: e.target.value as ScenarioConfig["model_name"],
+              })
+            }
           >
             <option value="logistic">Logistic Regression</option>
             <option value="random_forest">Random Forest</option>
             <option value="xgboost">XGBoost</option>
           </select>
         </label>
+
         <div className="flex flex-col gap-1 col-span-2">
           <span className="text-slate-300">Speed</span>
+
           <div className="flex gap-2">
             {[1, 5, 10].map((s) => (
               <button
@@ -185,6 +239,7 @@ export function SimulationControls() {
         >
           START
         </button>
+
         <button
           onClick={handlePause}
           disabled={!running}
@@ -192,6 +247,7 @@ export function SimulationControls() {
         >
           PAUSE
         </button>
+
         <button
           onClick={handleReset}
           className="flex-1 bg-miss/90 hover:bg-miss text-slate-950 font-mono font-bold py-2 rounded"

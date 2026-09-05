@@ -1,6 +1,7 @@
 import pytest
 import sys
 import os
+from types import SimpleNamespace
 
 # Add prediction and scheduler folders to path
 SCHED_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -708,6 +709,92 @@ def test_discovery_operates_without_ground_truth():
     assert params_mem == ["bands", "history_manager", "current_time"], (
         f"_update_active_memory signature must strictly be ['bands', 'history_manager', 'current_time'], got {params_mem}"
     )
+
+
+# =====================================================================
+# PERSISTENT KNOWLEDGE WARM-START TESTS
+# =====================================================================
+
+def make_prior(num_bands: int, *bands):
+    return SimpleNamespace(num_bands=num_bands, bands=list(bands))
+
+
+def make_band_knowledge(band_id: int, hit_ratio: float, confidence: float):
+    return SimpleNamespace(
+        band_id=band_id,
+        hit_ratio=hit_ratio,
+        confidence=confidence,
+    )
+
+
+def test_no_prior_knowledge_preserves_existing_cold_start_order():
+    bands = [10, 20, 30, 40]
+    default_scheduler = SmartScheduler(MockPredictor(), seed=42)
+    explicit_none_scheduler = SmartScheduler(MockPredictor(), seed=42, prior_knowledge=None)
+
+    default_order = complete_cold_start(default_scheduler, bands, BandHistoryManager())
+    explicit_none_order = complete_cold_start(explicit_none_scheduler, bands, BandHistoryManager())
+
+    assert explicit_none_order == default_order
+
+
+def test_high_hit_high_confidence_prior_adds_bounded_score_bonus():
+    prior = make_prior(20, make_band_knowledge(7, hit_ratio=1.0, confidence=1.0))
+    scheduler = SmartScheduler(MockPredictor(), prior_knowledge=prior, warm_prior_weight=0.05)
+    history_manager = BandHistoryManager()
+
+    warm_score = scheduler._score_band(7, 0.5, history_manager, current_time=10)
+    unknown_score = scheduler._score_band(8, 0.5, history_manager, current_time=10)
+
+    assert warm_score - unknown_score == pytest.approx(0.05)
+
+
+def test_zero_hit_prior_adds_no_positive_bonus():
+    prior = make_prior(20, make_band_knowledge(7, hit_ratio=0.0, confidence=1.0))
+    scheduler = SmartScheduler(MockPredictor(), prior_knowledge=prior)
+    history_manager = BandHistoryManager()
+
+    assert scheduler._score_band(7, 0.5, history_manager, 10) == pytest.approx(
+        scheduler._score_band(8, 0.5, history_manager, 10)
+    )
+
+
+def test_low_confidence_prior_has_proportionally_smaller_bonus():
+    prior = make_prior(20, make_band_knowledge(7, hit_ratio=1.0, confidence=0.2))
+    scheduler = SmartScheduler(MockPredictor(), prior_knowledge=prior, warm_prior_weight=0.05)
+    history_manager = BandHistoryManager()
+
+    bonus = scheduler._score_band(7, 0.5, history_manager, 10) - scheduler._score_band(
+        8, 0.5, history_manager, 10
+    )
+
+    assert bonus == pytest.approx(0.01)
+
+
+def test_warm_prior_does_not_enter_run_local_history():
+    prior = make_prior(20, make_band_knowledge(7, hit_ratio=1.0, confidence=1.0))
+    history_manager = BandHistoryManager()
+    SmartScheduler(MockPredictor(), prior_knowledge=prior)
+
+    assert history_manager.observed_bands() == []
+
+
+def test_cold_start_permutation_precedes_warm_prior_scoring():
+    bands = [1, 2, 3]
+    prior = make_prior(3, make_band_knowledge(3, hit_ratio=1.0, confidence=1.0))
+    scheduler = SmartScheduler(
+        MockPredictor(probabilities={1: 0.5, 2: 0.5, 3: 0.5}),
+        epsilon=0.0,
+        seed=6,
+        prior_knowledge=prior,
+    )
+    history_manager = BandHistoryManager()
+
+    cold_start_order = complete_cold_start(scheduler, bands, history_manager)
+    first_scored_choice = scheduler.select_band(bands, history_manager, current_time=3)
+
+    assert set(cold_start_order) == set(bands)
+    assert first_scored_choice == 3
 
 
 

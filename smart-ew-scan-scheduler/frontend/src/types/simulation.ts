@@ -80,6 +80,7 @@ export interface WSDelta {
 export interface SimulationState {
   running: boolean;
   completed: boolean;
+  knowledge_status: "cold" | "warm";
   scenario: ScenarioConfig;
   simulation_time: number;
   current_band: number | null;
