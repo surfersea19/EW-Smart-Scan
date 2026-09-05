@@ -8,15 +8,17 @@ import random
 from base_scheduler import BaseScheduler
 from history_manager import BandHistoryManager
 from predict import Predictor
+from periodicity_detector import PeriodicityDetector
 
 
 class SmartScheduler(BaseScheduler):
     """
     ML-driven scheduler with Active-Band Memory, Multi-Band Tracking,
-    anti-overexploitation, and adaptive exploration.
+    Temporal / Periodicity Intelligence, anti-overexploitation, and adaptive exploration.
 
     Combines:
       - Predicted activity probability (primary signal)
+      - Temporal / Periodicity behavior proximity and recurrence strength
       - Active-band memory candidate tracking (multi-emitter co-existence)
       - Tracking dwell rotation cooldown (prevents single-band monopoly)
       - Staleness & uncertainty scoring
@@ -57,8 +59,13 @@ class SmartScheduler(BaseScheduler):
         # Persistent prior evidence parameters
         prior_knowledge=None,
         warm_prior_weight: float = 0.05,
+        # Temporal / Periodicity parameters
+        periodicity_detector: PeriodicityDetector = None,
+        w_temporal: float = 0.15,
     ):
         self.predictor = predictor
+        self.periodicity_detector = periodicity_detector or PeriodicityDetector()
+        self.w_temporal = w_temporal
         self.w_prob = w_prob
         self.w_stale = w_stale
         self.w_unc = w_unc
@@ -291,17 +298,23 @@ class SmartScheduler(BaseScheduler):
         exploration_bonus = self.exploration_bonus_weight * exploration_ratio
         score += exploration_bonus
 
-        # 5. Persistent evidence bonus. This carries no timestamp into the
+        # 6. Persistent evidence bonus. This carries no timestamp into the
         # current run and applies only to bands observed in the prior snapshot.
         score += self.warm_prior_weight * self._warm_prior_by_band.get(band, 0.0)
 
-        # 6. Active-band memory priority bonus & dwell lock
+        # 7. Temporal / Periodic behavior bonus
+        if self.w_temporal > 0.0 and self.periodicity_detector is not None:
+            pres = self.periodicity_detector.analyze_band(history_manager, band, current_time)
+            temporal_signal = pres.temporal_proximity * pres.period_regularity * pres.confidence
+            score += self.w_temporal * temporal_signal
+
+        # 8. Active-band memory priority bonus & dwell lock
         if band in self._active_memory:
             score += self.w_active
             if band == self._last_scanned and self._tracking_dwell < self.tracking_dwell_limit:
                 score += self.tracking_dwell_bonus
 
-        # 7. Penalties for currently selected band
+        # 9. Penalties for currently selected band
         if band == self._last_scanned:
             # Immediate rescan penalty scaled by (1.0 - prob)
             score -= self.w_recent * (1.0 - prob)
@@ -448,6 +461,13 @@ class SmartScheduler(BaseScheduler):
 
             active_bonus = self.w_active if band in self._active_memory else 0.0
 
+            temporal_bonus = 0.0
+            period_est = 0.0
+            if self.w_temporal > 0.0 and self.periodicity_detector is not None:
+                pres = self.periodicity_detector.analyze_band(history_manager, band, current_time)
+                temporal_bonus = self.w_temporal * (pres.temporal_proximity * pres.period_regularity * pres.confidence)
+                period_est = pres.estimated_period
+
             repeat_penalty = 0.0
             cooldown_penalty = 0.0
             if band == self._last_scanned:
@@ -461,6 +481,7 @@ class SmartScheduler(BaseScheduler):
                 "band": band, "score": score, "prob": prob,
                 "staleness": staleness, "uncertainty": uncertainty,
                 "explore_bonus": explore_bonus, "active_bonus": active_bonus,
+                "temporal_bonus": temporal_bonus, "period_est": period_est,
                 "repeat_penalty": repeat_penalty + cooldown_penalty,
             })
 
@@ -469,13 +490,14 @@ class SmartScheduler(BaseScheduler):
         active_list = sorted(list(self._active_memory.keys()))
         discovery_list = sorted(list(self._discovery_candidates.keys()))
         print(f"\nScheduler decision at t={current_time} (last={self._last_scanned}, dwell={self._tracking_dwell}, consec_active={self._consecutive_active_scans}, active_memory={active_list}, discovery_candidates={discovery_list}):")
-        print(f"  {'Band':<6} {'Score':<8} {'P(act)':<8} {'Stale':<8} {'Uncert':<8} {'ExpBon':<8} {'ActBon':<8} {'Penalties':<8}")
-        print(f"  {'-'*72}")
+        print(f"  {'Band':<6} {'Score':<8} {'P(act)':<8} {'Stale':<8} {'Uncert':<8} {'ExpBon':<8} {'ActBon':<8} {'TmpBon':<8} {'Penalties':<8}")
+        print(f"  {'-'*80}")
         for i, row in enumerate(scored[:top_n]):
             marker = " <- CHOSEN" if i == 0 else ""
             print(
                 f"  {row['band']:<6} {row['score']:<8.3f} "
                 f"{row['prob']:<8.3f} {row['staleness']:<8.3f} "
                 f"{row['uncertainty']:<8.3f} {row['explore_bonus']:<8.3f} "
-                f"{row['active_bonus']:<8.3f} {row['repeat_penalty']:<8.3f}{marker}"
+                f"{row['active_bonus']:<8.3f} {row['temporal_bonus']:<8.3f} "
+                f"{row['repeat_penalty']:<8.3f}{marker}"
             )

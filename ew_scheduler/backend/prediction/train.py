@@ -157,7 +157,7 @@ class ModelTrainer:
         )
         print(f"\nFeature importance ({model_name}):")
         for name, imp in pairs:
-            bar = "█" * int(imp * 40)
+            bar = "#" * int(imp * 40)
             print(f"  {name:<25} {imp:.3f}  {bar}")
 
     def load_model(self, name: str):
