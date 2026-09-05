@@ -162,6 +162,30 @@ def test_reset_loads_valid_prior_knowledge_without_populating_run_history(monkey
     assert adapter._hm.observed_bands() == []
 
 
+def test_reset_passes_loaded_prior_and_band_count_to_scheduler_service(monkeypatch) -> None:
+    knowledge = sample_knowledge()
+    orchestrator, adapter = make_reset_orchestrator(
+        monkeypatch,
+        SimpleNamespace(load=lambda: knowledge),
+    )
+    captured = {}
+
+    def build_scheduler_adapter(*args, **kwargs):
+        captured.update(kwargs)
+        return adapter
+
+    monkeypatch.setattr(
+        orchestrator_module.scheduler_service,
+        "build_scheduler_adapter",
+        build_scheduler_adapter,
+    )
+
+    orchestrator.reset(ScenarioConfig(strategy="sequential", num_bands=64))
+
+    assert captured["prior_knowledge"] == knowledge
+    assert captured["current_num_bands"] == 64
+
+
 def test_reset_with_no_persisted_knowledge_uses_cold_start(monkeypatch) -> None:
     orchestrator, _ = make_reset_orchestrator(monkeypatch, SimpleNamespace(load=lambda: None))
 

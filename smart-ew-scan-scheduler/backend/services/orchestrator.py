@@ -74,6 +74,8 @@ class SimulationOrchestrator:
             scenario.strategy,
             scheduler_seed=scenario.scheduler_seed,
             model_name=scenario.model_name,
+            prior_knowledge=self.loaded_prior_knowledge,
+            current_num_bands=scenario.num_bands,
         )
 
         engine = simulation_service.get_simulation_engine()

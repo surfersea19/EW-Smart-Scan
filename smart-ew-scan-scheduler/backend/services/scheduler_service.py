@@ -22,6 +22,8 @@ def build_scheduler_adapter(
     strategy: str,
     scheduler_seed: int = 0,
     model_name: str = "random_forest",
+    prior_knowledge=None,
+    current_num_bands: int | None = None,
 ) -> SchedulerAdapter:
     """
     strategy: "sequential" | "random" | "smart_ml"
@@ -36,7 +38,18 @@ def build_scheduler_adapter(
         p2_scheduler = RandomScheduler(seed=scheduler_seed)
     elif strategy == "smart_ml":
         predictor = get_predictor(model_name)  # raises PredictorNotAvailableError if untrained
-        p2_scheduler = SmartScheduler(predictor, seed=scheduler_seed)
+        compatible_prior = None
+        if (
+            prior_knowledge is not None
+            and current_num_bands is not None
+            and getattr(prior_knowledge, "num_bands", None) == current_num_bands
+        ):
+            compatible_prior = prior_knowledge
+        p2_scheduler = SmartScheduler(
+            predictor,
+            seed=scheduler_seed,
+            prior_knowledge=compatible_prior,
+        )
     else:
         raise ValueError(f"Unknown strategy: {strategy!r}")
 
