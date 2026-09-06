@@ -26,3 +26,4 @@ Thumbs.db
 # Nested Git repositories
 **/.git/
 **/node_modules/
+smart-ew-scan-scheduler/backend/knowledge/data/
