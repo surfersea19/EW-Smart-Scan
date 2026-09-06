@@ -1,84 +1,67 @@
-import { useEffect, useRef } from "react";
 import { Waterfall } from "../components/Waterfall";
 import { ReceiverStatus } from "../components/ReceiverStatus";
-import { PredictionPanel } from "../components/PredictionPanel";
 import { SchedulerDecision } from "../components/SchedulerDecision";
-import { PredictedActivityPanel } from "../components/PredictedActivityPanel";
-import { MetricsPanel } from "../components/MetricsPanel";
-import { ComparisonChart } from "../components/ComparisonChart";
 import { SimulationControls } from "../components/SimulationControls";
-import { SimulationSocket } from "../services/websocket";
-import { api } from "../services/api";
-import { useSimulationStore } from "../store/simulationStore";
+import { PredictionPanel } from "../components/PredictionPanel";
+import { PredictedActivityPanel } from "../components/PredictedActivityPanel";
+import { ComparisonChart } from "../components/ComparisonChart";
+import { MissionIdentity } from "../components/MissionIdentity";
 
 export function Dashboard() {
-  const applyDelta = useSimulationStore((s) => s.applyDelta);
-  const setConnected = useSimulationStore((s) => s.setConnected);
-  const setScenario = useSimulationStore((s) => s.setScenario);
-  const setRunning = useSimulationStore((s) => s.setRunning);
-  const setCompleted = useSimulationStore((s) => s.setCompleted);
-  const setKnowledgeStatus = useSimulationStore((s) => s.setKnowledgeStatus);
-  const socketRef = useRef<SimulationSocket | null>(null);
-
-  useEffect(() => {
-    const socket = new SimulationSocket(applyDelta, setConnected);
-    socket.connect();
-    socketRef.current = socket;
-    return () => socket.disconnect();
-  }, [applyDelta, setConnected]);
-
-  useEffect(() => {
-    // BUG FIX: the store's default scenario.strategy ("smart_ml") is
-    // just a local assumption -- it can differ from what the backend
-    // actually initialized with (e.g. it falls back to "sequential" for
-    // this process if no trained model exists yet; see
-    // services/orchestrator.py get_orchestrator()). Fetching the real
-    // state once on mount means the two can never silently disagree:
-    // the UI always reflects what's actually running, not a guess.
-    api
-      .getState()
-      .then((state) => {
-        setScenario(state.scenario);
-        setRunning(state.running);
-        setCompleted(state.completed);
-        setKnowledgeStatus(state.knowledge_status);
-      })
-      .catch((err) => console.error("Failed to fetch initial backend state", err));
-  }, [
-    setScenario,
-    setRunning,
-    setCompleted,
-    setKnowledgeStatus,
-  ]);
-
   return (
-    <div className="min-h-screen p-6 max-w-7xl mx-auto">
-      <header className="mb-6">
-        <h1 className="text-2xl font-mono font-bold text-slate-100">
-          SMART EW SCAN SCHEDULER
-        </h1>
-        <p className="text-sm text-slate-500 font-mono">
-          ML-based Electronic Support receiver scheduler — live simulation
-        </p>
-      </header>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-4">
-          <Waterfall />
-          <div className="grid grid-cols-2 gap-4">
-            <ReceiverStatus />
-            <SchedulerDecision />
+    <div className="p-6 max-w-[1560px] mx-auto space-y-6 font-sans">
+      {/* ========================================================================= */}
+      {/* 1. TOP / MAIN AREA: WATERFALL (DOMINANT LEFT) + SIDEBAR CONTROLS (RIGHT)  */}
+      {/* ========================================================================= */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left / Large Area (8 of 12 columns = ~67% width) */}
+        <div className="lg:col-span-8 space-y-5">
+          {/* Dominant Spectrum Waterfall */}
+          <div className="bg-[#0b1220] p-4 rounded border border-[#1e2638]">
+            <Waterfall />
           </div>
-          <ComparisonChart />
+
+          {/* Directly Underneath Waterfall: Receiver Telemetry (Left) | AI Decision (Right) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-[#0b1220] p-4 rounded border border-[#1e2638]">
+              <ReceiverStatus />
+            </div>
+            <div className="bg-[#0b1220] p-4 rounded border border-[#1e2638]">
+              <SchedulerDecision />
+            </div>
+          </div>
         </div>
 
-        <div className="space-y-4">
-          <SimulationControls />
-          <PredictionPanel />
-          <PredictedActivityPanel />
-          <MetricsPanel />
+        {/* Right / Narrow Sidebar (4 of 12 columns = ~33% width) */}
+        <div className="lg:col-span-4 space-y-4">
+          {/* Scenario Controls */}
+          <div className="bg-[#0b1220] p-4 rounded border border-[#1e2638]">
+            <SimulationControls />
+          </div>
+
+          {/* ML Activity Probabilities (Restored) */}
+          <div className="bg-[#0b1220] p-4 rounded border border-[#1e2638]">
+            <PredictionPanel />
+          </div>
+
+          {/* Ranked Candidate Targets (Restored) */}
+          <div className="bg-[#0b1220] p-4 rounded border border-[#1e2638]">
+            <PredictedActivityPanel />
+          </div>
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* 2. BASELINE VS SMART COMPARISON (NUMERICAL TABLE)                         */}
+      {/* ========================================================================= */}
+      <div className="bg-[#0b1220] p-5 rounded border border-[#1e2638]">
+        <ComparisonChart />
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 3. MINIMAL SMART SCAN BRANDING                                           */}
+      {/* ========================================================================= */}
+      <MissionIdentity />
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useSimulationStore } from "../store/simulationStore";
 import { api } from "../services/api";
 import type { NoiseLevel, Strategy, ScenarioConfig } from "../types/simulation";
@@ -13,8 +14,9 @@ export function SimulationControls() {
   const setCompleted = useSimulationStore((s) => s.setCompleted);
   const resetHistory = useSimulationStore((s) => s.resetHistory);
   const connected = useSimulationStore((s) => s.connected);
-  const knowledgeStatus = useSimulationStore((s) => s.knowledgeStatus);
   const setKnowledgeStatus = useSimulationStore((s) => s.setKnowledgeStatus);
+
+  const [isBusy, setIsBusy] = useState(false);
 
   const syncBackendState = async () => {
     try {
@@ -36,12 +38,14 @@ export function SimulationControls() {
     setCompleted(false);
 
     try {
-      // reset picks up the new scenario immediately
+      setIsBusy(true);
       await api.reset(next);
       resetHistory();
       await syncBackendState();
     } catch (err) {
       console.error("Failed to update simulation scenario", err);
+    } finally {
+      setIsBusy(false);
     }
   };
 
@@ -52,27 +56,34 @@ export function SimulationControls() {
 
   const handleStart = async () => {
     try {
+      setIsBusy(true);
       const res = await api.start();
       setRunning(res.running);
       setCompleted(res.completed);
     } catch (err) {
       console.error("Failed to start simulation", err);
+    } finally {
+      setIsBusy(false);
     }
   };
 
   const handlePause = async () => {
     try {
+      setIsBusy(true);
       const res = await api.stop();
       setRunning(res.running);
       setCompleted(res.completed);
     } catch (err) {
       console.error("Failed to pause simulation", err);
       setRunning(false);
+    } finally {
+      setIsBusy(false);
     }
   };
 
   const handleReset = async () => {
     try {
+      setIsBusy(true);
       await api.reset(scenario);
       resetHistory();
       setRunning(false);
@@ -80,148 +91,231 @@ export function SimulationControls() {
       await syncBackendState();
     } catch (err) {
       console.error("Failed to reset simulation", err);
+    } finally {
+      setIsBusy(false);
     }
   };
 
+  // Reusable input and select style classes guaranteeing high contrast in dark mode
+  const fieldClass =
+    "w-full bg-[#0b1220] text-[#e5e7eb] border border-[#334155] rounded px-2.5 py-1 text-xs outline-none focus:border-accent disabled:bg-[#0f172a] disabled:text-[#94a3b8] disabled:border-[#334155] disabled:opacity-100 disabled:cursor-not-allowed";
+
+  const optionStyle = {
+    backgroundColor: "#0b1220",
+    color: "#e5e7eb",
+  };
+
   return (
-    <div className="bg-panel rounded-lg p-4 border border-slate-800">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-mono text-slate-400 uppercase tracking-wide">
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-borderMuted pb-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-textPrimary">
           Scenario Controls
-        </h3>
-
-        <div className="flex items-center gap-2">
-          {completed && (
-            <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-accent/20 text-accent font-semibold">
-              COMPLETED
-            </span>
-          )}
-
-          <span
-            className={`text-xs font-mono px-2 py-0.5 rounded-full ${
-              knowledgeStatus === "warm"
-                ? "bg-hit/20 text-hit"
-                : "bg-slate-700 text-slate-300"
-            }`}
-          >
-            {knowledgeStatus === "warm" ? "WARM" : "COLD"}
-          </span>
-
-          <span
-            className={`text-xs font-mono px-2 py-0.5 rounded-full ${
-              connected ? "bg-hit/20 text-hit" : "bg-miss/20 text-miss"
-            }`}
-          >
-            {connected ? "connected" : "disconnected"}
-          </span>
-        </div>
+        </h2>
+        <span className="text-[11px] font-mono text-textMuted">
+          100 MHz / Band · 0–18 GHz
+        </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 font-mono text-sm mb-4">
-        <label className="flex flex-col gap-1">
-          Bands
+      {/* Action Trigger Buttons */}
+      <div className="grid grid-cols-3 gap-2">
+        <button
+          type="button"
+          onClick={handleStart}
+          disabled={running || completed || isBusy || !connected}
+          className="py-1.5 px-3 rounded text-xs font-semibold bg-success/20 text-success border border-success/40 hover:bg-success/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          START
+        </button>
+
+        <button
+          type="button"
+          onClick={handlePause}
+          disabled={!running || isBusy}
+          className="py-1.5 px-3 rounded text-xs font-semibold bg-warning/20 text-warning border border-warning/40 hover:bg-warning/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          PAUSE
+        </button>
+
+        <button
+          type="button"
+          onClick={handleReset}
+          disabled={isBusy}
+          className="py-1.5 px-3 rounded text-xs font-semibold bg-surface hover:bg-surfaceHover text-textPrimary border border-borderMuted disabled:opacity-30 transition-colors"
+        >
+          RESET
+        </button>
+      </div>
+
+      {/* Technical Form Controls Grid */}
+      <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+        {/* Strategy */}
+        <div className="col-span-2 space-y-1">
+          <label className="text-[11px] text-textMuted block">Strategy</label>
+          <select
+            value={scenario.strategy}
+            disabled={running}
+            onChange={(e) => update({ strategy: e.target.value as Strategy })}
+            className={fieldClass}
+            style={{
+              backgroundColor: running ? "#0f172a" : "#0b1220",
+              color: running ? "#94a3b8" : "#e5e7eb",
+              colorScheme: "dark",
+            }}
+          >
+            <option value="smart_ml" style={optionStyle}>
+              Smart ML (Active Memory + Periodic + Behavior)
+            </option>
+            <option value="sequential" style={optionStyle}>
+              Sequential Scan (Baseline)
+            </option>
+            <option value="random" style={optionStyle}>
+              Random Scan (Baseline)
+            </option>
+          </select>
+        </div>
+
+        {/* Bands & Emitters */}
+        <div className="space-y-1">
+          <label className="text-[11px] text-textMuted block">Bands</label>
           <input
             type="number"
-            className="bg-slate-800 rounded px-2 py-1"
+            min={10}
+            max={500}
+            disabled={running}
             value={scenario.num_bands}
             onChange={(e) => update({ num_bands: Number(e.target.value) })}
+            className={fieldClass}
+            style={{
+              backgroundColor: running ? "#0f172a" : "#0b1220",
+              color: running ? "#94a3b8" : "#e5e7eb",
+              colorScheme: "dark",
+            }}
           />
-        </label>
+        </div>
 
-        <label className="flex flex-col gap-1">
-          Emitters
+        <div className="space-y-1">
+          <label className="text-[11px] text-textMuted block">Emitters</label>
           <input
             type="number"
-            className="bg-slate-800 rounded px-2 py-1"
+            min={1}
+            max={50}
+            disabled={running}
             value={scenario.num_emitters}
             onChange={(e) => update({ num_emitters: Number(e.target.value) })}
+            className={fieldClass}
+            style={{
+              backgroundColor: running ? "#0f172a" : "#0b1220",
+              color: running ? "#94a3b8" : "#e5e7eb",
+              colorScheme: "dark",
+            }}
           />
-        </label>
+        </div>
 
-        <label className="flex flex-col gap-1">
-          Noise
+        {/* Noise & Model */}
+        <div className="space-y-1">
+          <label className="text-[11px] text-textMuted block">Noise Level</label>
           <select
-            className="bg-slate-800 rounded px-2 py-1"
             value={scenario.noise_level}
-            onChange={(e) =>
-              update({ noise_level: e.target.value as NoiseLevel })
-            }
+            disabled={running}
+            onChange={(e) => update({ noise_level: e.target.value as NoiseLevel })}
+            className={fieldClass}
+            style={{
+              backgroundColor: running ? "#0f172a" : "#0b1220",
+              color: running ? "#94a3b8" : "#e5e7eb",
+              colorScheme: "dark",
+            }}
           >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
+            <option value="low" style={optionStyle}>
+              Low (High SNR)
+            </option>
+            <option value="medium" style={optionStyle}>
+              Medium
+            </option>
+            <option value="high" style={optionStyle}>
+              High
+            </option>
           </select>
-        </label>
+        </div>
 
-        <label className="flex flex-col gap-1">
-          Strategy
+        <div className="space-y-1">
+          <label className="text-[11px] text-textMuted block">Model</label>
           <select
-            className="bg-slate-800 rounded px-2 py-1"
-            value={scenario.strategy}
-            onChange={(e) =>
-              update({ strategy: e.target.value as Strategy })
-            }
-          >
-            <option value="smart_ml">Smart ML</option>
-            <option value="sequential">Sequential</option>
-            <option value="random">Random</option>
-          </select>
-        </label>
-
-        <label className="flex flex-col gap-1">
-          Scenario Seed
-          <input
-            type="number"
-            className="bg-slate-800 rounded px-2 py-1"
-            value={scenario.scenario_seed}
-            onChange={(e) =>
-              update({ scenario_seed: Number(e.target.value) })
-            }
-          />
-        </label>
-
-        <label className="flex flex-col gap-1">
-          Scheduler Seed
-          <input
-            type="number"
-            className="bg-slate-800 rounded px-2 py-1"
-            value={scenario.scheduler_seed}
-            onChange={(e) =>
-              update({ scheduler_seed: Number(e.target.value) })
-            }
-          />
-        </label>
-
-        <label className="flex flex-col gap-1 col-span-2">
-          Model
-          <select
-            className="bg-slate-800 rounded px-2 py-1"
             value={scenario.model_name}
+            disabled={running}
             onChange={(e) =>
               update({
                 model_name: e.target.value as ScenarioConfig["model_name"],
               })
             }
+            className={fieldClass}
+            style={{
+              backgroundColor: running ? "#0f172a" : "#0b1220",
+              color: running ? "#94a3b8" : "#e5e7eb",
+              colorScheme: "dark",
+            }}
           >
-            <option value="logistic">Logistic Regression</option>
-            <option value="random_forest">Random Forest</option>
-            <option value="xgboost">XGBoost</option>
+            <option value="random_forest" style={optionStyle}>
+              Random Forest
+            </option>
+            <option value="xgboost" style={optionStyle}>
+              XGBoost
+            </option>
+            <option value="logistic" style={optionStyle}>
+              Logistic Regression
+            </option>
           </select>
-        </label>
+        </div>
 
-        <div className="flex flex-col gap-1 col-span-2">
-          <span className="text-slate-300">Speed</span>
+        {/* Seeds */}
+        <div className="space-y-1">
+          <label className="text-[11px] text-textMuted block">Scenario Seed</label>
+          <input
+            type="number"
+            disabled={running}
+            value={scenario.scenario_seed}
+            onChange={(e) => update({ scenario_seed: Number(e.target.value) })}
+            className={fieldClass}
+            style={{
+              backgroundColor: running ? "#0f172a" : "#0b1220",
+              color: running ? "#94a3b8" : "#e5e7eb",
+              colorScheme: "dark",
+            }}
+          />
+        </div>
 
+        <div className="space-y-1">
+          <label className="text-[11px] text-textMuted block">Scheduler Seed</label>
+          <input
+            type="number"
+            disabled={running}
+            value={scenario.scheduler_seed}
+            onChange={(e) => update({ scheduler_seed: Number(e.target.value) })}
+            className={fieldClass}
+            style={{
+              backgroundColor: running ? "#0f172a" : "#0b1220",
+              color: running ? "#94a3b8" : "#e5e7eb",
+              colorScheme: "dark",
+            }}
+          />
+        </div>
+
+        {/* Execution Speed */}
+        <div className="col-span-2 space-y-1 pt-1">
+          <div className="flex items-center justify-between text-[11px] text-textMuted">
+            <span>Execution Speed</span>
+            <span>{playbackSpeed}x</span>
+          </div>
           <div className="flex gap-2">
             {[1, 5, 10].map((s) => (
               <button
                 key={s}
                 type="button"
                 onClick={() => handleSpeedChange(s)}
-                className={`flex-1 py-1 rounded font-mono text-sm font-semibold transition-all ${
+                className={`flex-1 py-1 rounded text-xs transition-colors border ${
                   playbackSpeed === s
-                    ? "bg-accent text-slate-950 font-bold"
-                    : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                    ? "bg-surfaceHover text-textPrimary border-accent font-semibold"
+                    : "bg-surface text-textSecondary border-borderMuted hover:text-textPrimary"
                 }`}
               >
                 {s}x
@@ -229,31 +323,6 @@ export function SimulationControls() {
             ))}
           </div>
         </div>
-      </div>
-
-      <div className="flex gap-2">
-        <button
-          onClick={handleStart}
-          disabled={running || completed}
-          className="flex-1 bg-hit/90 hover:bg-hit text-slate-950 font-mono font-bold py-2 rounded disabled:opacity-40"
-        >
-          START
-        </button>
-
-        <button
-          onClick={handlePause}
-          disabled={!running}
-          className="flex-1 bg-slate-700 hover:bg-slate-600 font-mono font-bold py-2 rounded disabled:opacity-40"
-        >
-          PAUSE
-        </button>
-
-        <button
-          onClick={handleReset}
-          className="flex-1 bg-miss/90 hover:bg-miss text-slate-950 font-mono font-bold py-2 rounded"
-        >
-          RESET
-        </button>
       </div>
     </div>
   );
