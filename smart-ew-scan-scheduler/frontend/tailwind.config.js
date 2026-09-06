@@ -4,16 +4,43 @@ export default {
   theme: {
     extend: {
       colors: {
-        panel: "#0f172a",
-        panelLight: "#1e293b",
-        accent: "#22d3ee",
-        hit: "#4ade80",
-        miss: "#f87171",
+        canvas: "#090d14",
+        surface: "#0f1420",
+        surfaceHover: "#161d2e",
+        surfaceRaised: "#131927",
+        borderMuted: "#1e2638",
+        borderSubtle: "#28334a",
+        textPrimary: "#f0f4f8",
+        textSecondary: "#8b9bb4",
+        textMuted: "#56657f",
+        accent: "#38bdf8",
+        accentMuted: "#0284c7",
+        success: "#34d399",
+        warning: "#fbbf24",
+        danger: "#f87171",
       },
       fontFamily: {
-        mono: ["JetBrains Mono", "Consolas", "monospace"],
+        sans: [
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "Segoe UI",
+          "Roboto",
+          "Helvetica",
+          "Arial",
+          "sans-serif",
+        ],
+        mono: [
+          "ui-monospace",
+          "SFMono-Regular",
+          "SF Mono",
+          "Consolas",
+          "Liberation Mono",
+          "monospace",
+        ],
       },
     },
   },
   plugins: [],
 };
+
+

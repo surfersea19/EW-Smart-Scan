@@ -29,72 +29,64 @@ export function Waterfall() {
     }
   }, [history.length, running]);
 
-  // SVG coordinate dimensions
+  // Coordinate dimensions
   const viewWidth = 760;
-  const viewHeight = 290;
-  const margin = { top: 15, right: 35, bottom: 42, left: 52 };
+  const viewHeight = 310;
+  const margin = { top: 16, right: 36, bottom: 36, left: 48 };
   const basePlotWidth = viewWidth - margin.left - margin.right;
   const plotHeight = viewHeight - margin.top - margin.bottom;
 
-  // Maximum bands is numBands (0 to numBands - 1). Highest index is B(numBands - 1)
   const maxBandIndex = Math.max(0, numBands - 1);
 
-  // Band Y-coordinate helper (B0 at bottom, B179 at top)
   const getYForBand = (band: number) => {
     const clamped = Math.max(0, Math.min(maxBandIndex, band));
     return margin.top + plotHeight * (1 - clamped / maxBandIndex);
   };
 
-  // Y-axis tick values: B179, B160, B140, B120, B100, B80, B60, B40, B20, B0
+  // Y-axis tick values: B179, B160, B120, B80, B40, B0
   const yTicks: number[] = [];
   if (numBands > 0) {
-    yTicks.push(maxBandIndex); // B179
-    for (let b = 160; b > 0; b -= 20) {
+    yTicks.push(maxBandIndex);
+    for (let b = 140; b > 0; b -= 40) {
       if (b < maxBandIndex) {
         yTicks.push(b);
       }
     }
-    yTicks.push(0); // B0
+    yTicks.push(0);
   }
 
-  // Display all time steps. The timeline grows horizontally after 45 columns,
-  // preserving the existing column density instead of compressing history.
   const displayHistory = history;
-  const minColumns = 30;
+  const minColumns = 36;
   const totalColumns = Math.max(displayHistory.length, minColumns);
-  const visibleColumns = Math.min(totalColumns, 45);
+  const visibleColumns = Math.min(totalColumns, 50);
   const colWidth = basePlotWidth / visibleColumns;
   const plotWidth = Math.max(basePlotWidth, totalColumns * colWidth);
   const timelineWidth = margin.left + plotWidth + margin.right;
 
-  // X position helper
   const getXForIndex = (index: number) => margin.left + index * colWidth;
-
   const currentScanY = currentBand !== null ? getYForBand(currentBand) : null;
 
   return (
-    <div className="bg-panel rounded-lg p-4 border border-slate-800 flex flex-col relative">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-2">
+    <div className="flex flex-col space-y-2">
+      {/* Title & Status Strip */}
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h3 className="text-sm font-mono text-slate-300 uppercase tracking-wide font-semibold">
-            Live Spectrum / Waterfall
-          </h3>
-          {currentBand !== null && running && (
-            <span className="text-xs font-mono px-2 py-0.5 rounded bg-accent/15 text-accent border border-accent/30 animate-pulse">
-              Scanning B{currentBand}
-            </span>
-          )}
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-textPrimary">
+            Spectrum Activity Waterfall
+          </h2>
+          <span className="text-[11px] font-mono text-textMuted">
+            0–18 GHz · 180 Bands (100 MHz / Band)
+          </span>
         </div>
-        <span className="text-xs text-slate-500 font-mono italic">
-          simulated activity — not a physical spectrogram
-        </span>
+        <div className="flex items-center gap-2 text-xs font-mono text-textSecondary">
+          <span>{displayHistory.length} Ticks</span>
+        </div>
       </div>
 
-      {/* Waterfall Visualization Area */}
+      {/* Plot Canvas */}
       <div
         ref={scrollContainerRef}
-        className="relative w-full overflow-x-auto overflow-y-hidden bg-slate-950/80 rounded border border-slate-800/80"
+        className="relative w-full overflow-x-auto overflow-y-hidden bg-[#070b12] rounded border border-borderMuted"
       >
         <svg
           viewBox={`0 0 ${timelineWidth} ${viewHeight}`}
@@ -103,13 +95,14 @@ export function Waterfall() {
           className="block select-none"
           onMouseLeave={() => setTooltip(null)}
         >
-          {/* Background Grid Area */}
+          {/* Plot Background — Very Light Grey (#f1f3f5) */}
           <rect
             x={margin.left}
             y={margin.top}
             width={plotWidth}
             height={plotHeight}
-            fill="#060c18"
+            fill="#f1f3f5"
+            rx="1"
           />
 
           {/* Horizontal Grid Lines & Y-Axis Labels */}
@@ -122,18 +115,16 @@ export function Waterfall() {
                   y1={y}
                   x2={margin.left + plotWidth}
                   y2={y}
-                  stroke="#1e293b"
+                  stroke="#cbd5e1"
                   strokeWidth="1"
-                  strokeDasharray="2,3"
                 />
                 <text
                   x={margin.left - 6}
                   y={y + 3.5}
                   textAnchor="end"
-                  fill="#94a3b8"
-                  fontSize="10"
+                  fill="#8892b0"
+                  fontSize="9.5"
                   fontFamily="monospace"
-                  fontWeight="600"
                 >
                   B{tickBand}
                 </text>
@@ -141,20 +132,20 @@ export function Waterfall() {
             );
           })}
 
-          {/* Vertical Column Separators & Time Labels */}
+          {/* Vertical Grid Columns & Time Ticks */}
           {displayHistory.map((point, idx) => {
             const x = getXForIndex(idx);
             const isLatest = idx === displayHistory.length - 1;
-            const showTimeTick = idx % 8 === 0 || isLatest;
+            const showTimeTick = idx % 10 === 0 || isLatest;
 
             return (
-              <g key={`col-grid-${point.time}-${idx}`}>
+              <g key={`col-${point.time}-${idx}`}>
                 <line
                   x1={x}
                   y1={margin.top}
                   x2={x}
                   y2={margin.top + plotHeight}
-                  stroke={isLatest ? "#38bdf844" : "#0f172a"}
+                  stroke={isLatest ? "#64748b" : "#e2e8f0"}
                   strokeWidth="1"
                 />
                 {showTimeTick && (
@@ -162,18 +153,18 @@ export function Waterfall() {
                     x={x + colWidth / 2}
                     y={margin.top + plotHeight + 14}
                     textAnchor="middle"
-                    fill="#64748b"
+                    fill="#8892b0"
                     fontSize="9"
                     fontFamily="monospace"
                   >
-                    t={point.time}
+                    {point.time}s
                   </text>
                 )}
               </g>
             );
           })}
 
-          {/* LAYER 1: Simulated RF Environment Emitter Activity Blocks */}
+          {/* LAYER 1: Simulated RF Emitter Blocks (Dark Green Activity) */}
           {displayHistory.map((point, colIdx) => {
             const x = getXForIndex(colIdx);
             return point.activeEmitters?.map((emitter, emitIdx) => {
@@ -181,47 +172,35 @@ export function Waterfall() {
               const blockHeight = Math.max(5, plotHeight / 36);
 
               return (
-                <g key={`emit-${point.time}-${emitter.band}-${emitIdx}`}>
-                  {/* Subtle emission glow */}
-                  <rect
-                    x={x + 1}
-                    y={y - blockHeight / 2}
-                    width={Math.max(2, colWidth - 2)}
-                    height={blockHeight}
-                    fill="#f59e0b"
-                    opacity="0.3"
-                    rx="1"
-                  />
-                  {/* Core emitter activity block */}
-                  <rect
-                    x={x + 1.5}
-                    y={y - blockHeight / 2 + 0.5}
-                    width={Math.max(1.5, colWidth - 3)}
-                    height={blockHeight - 1}
-                    fill="#fbbf24"
-                    opacity="0.9"
-                    rx="1"
-                    className="cursor-pointer hover:fill-amber-300"
-                    onMouseEnter={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      setTooltip({
-                        x: rect.left + rect.width / 2,
-                        y: rect.top,
-                        time: point.time,
-                        band: emitter.band,
-                        activeEmitter: emitter,
-                        isScanned: point.band === emitter.band,
-                        detected: point.band === emitter.band ? point.detected : undefined,
-                        measuredPower: point.band === emitter.band ? point.power : undefined,
-                      });
-                    }}
-                  />
-                </g>
+                <rect
+                  key={`emit-${point.time}-${emitter.band}-${emitIdx}`}
+                  x={x + 0.5}
+                  y={y - blockHeight / 2}
+                  width={Math.max(2, colWidth - 1)}
+                  height={blockHeight}
+                  fill="#15803d"
+                  opacity="0.95"
+                  rx="0.5"
+                  className="cursor-pointer hover:opacity-100"
+                  onMouseEnter={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setTooltip({
+                      x: rect.left + rect.width / 2,
+                      y: rect.top,
+                      time: point.time,
+                      band: emitter.band,
+                      activeEmitter: emitter,
+                      isScanned: point.band === emitter.band,
+                      detected: point.band === emitter.band ? point.detected : undefined,
+                      measuredPower: point.band === emitter.band ? point.power : undefined,
+                    });
+                  }}
+                />
               );
             });
           })}
 
-          {/* LAYER 2: Receiver Scan Indicator & Separate HIT/MISS Markers */}
+          {/* LAYER 2: Receiver Scan Dwell Cell & HIT/MISS Indicators */}
           {displayHistory.map((point, colIdx) => {
             if (point.band === null) return null;
             const x = getXForIndex(colIdx);
@@ -250,37 +229,35 @@ export function Waterfall() {
                   });
                 }}
               >
-                {/* Scanned band cell outline */}
+                {/* Dwell outline */}
                 <rect
                   x={x + 0.5}
                   y={y - scanCellHeight / 2}
                   width={Math.max(3, colWidth - 1)}
                   height={scanCellHeight}
                   fill="none"
-                  stroke={isLatest ? "#38bdf8" : "#64748b"}
+                  stroke={isLatest ? "#0284c7" : "#475569"}
                   strokeWidth={isLatest ? "1.5" : "1"}
-                  strokeDasharray={isLatest ? "none" : "2,1"}
-                  rx="1.5"
+                  rx="1"
                 />
 
-                {/* Separate HIT (✓) or MISS (✕) Detection Marker */}
+                {/* HIT (✓) Indicator — Sky Blue */}
                 {point.detected === true ? (
                   <g>
-                    {/* HIT indicator: Green badge with checkmark */}
                     <circle
                       cx={x + colWidth / 2}
                       cy={y}
-                      r={Math.min(5, colWidth / 2)}
-                      fill="#166534"
-                      stroke="#4ade80"
-                      strokeWidth="1.2"
+                      r={Math.min(4.5, colWidth / 2)}
+                      fill="#0284c7"
+                      stroke="#0369a1"
+                      strokeWidth="1"
                     />
                     <text
                       x={x + colWidth / 2}
-                      y={y + 3}
+                      y={y + 2.5}
                       textAnchor="middle"
                       fill="#ffffff"
-                      fontSize="8"
+                      fontSize="7.5"
                       fontWeight="bold"
                       fontFamily="monospace"
                     >
@@ -288,22 +265,22 @@ export function Waterfall() {
                     </text>
                   </g>
                 ) : point.detected === false ? (
+                  /* MISS (✕) Indicator — Red */
                   <g>
-                    {/* MISS indicator: Red cross marker */}
                     <circle
                       cx={x + colWidth / 2}
                       cy={y}
-                      r={Math.min(4, colWidth / 2 - 1)}
-                      fill="#7f1d1d"
-                      stroke="#f87171"
+                      r={Math.min(3.5, colWidth / 2 - 0.5)}
+                      fill="#dc2626"
+                      stroke="#991b1b"
                       strokeWidth="1"
                     />
                     <text
                       x={x + colWidth / 2}
-                      y={y + 2.5}
+                      y={y + 2}
                       textAnchor="middle"
-                      fill="#fca5a5"
-                      fontSize="7"
+                      fill="#ffffff"
+                      fontSize="6.5"
                       fontWeight="bold"
                       fontFamily="monospace"
                     >
@@ -318,33 +295,20 @@ export function Waterfall() {
           {/* LAYER 3: Current Receiver Scan Line Reticle */}
           {currentScanY !== null && (
             <g>
-              {/* Horizontal scan line across the waterfall */}
               <line
                 x1={margin.left}
                 y1={currentScanY}
                 x2={margin.left + plotWidth}
                 y2={currentScanY}
-                stroke="#22d3ee"
-                strokeWidth="1.2"
-                strokeDasharray="4,3"
-                opacity="0.75"
-              />
-              {/* Right-edge band indicator tag */}
-              <rect
-                x={margin.left + plotWidth + 2}
-                y={currentScanY - 7}
-                width="28"
-                height="14"
-                fill="#0f172a"
-                stroke="#22d3ee"
+                stroke="#0284c7"
                 strokeWidth="1"
-                rx="2"
+                strokeDasharray="3,3"
+                opacity="0.8"
               />
               <text
-                x={margin.left + plotWidth + 16}
-                y={currentScanY + 3.5}
-                textAnchor="middle"
-                fill="#22d3ee"
+                x={margin.left + plotWidth + 4}
+                y={currentScanY + 3}
+                fill="#0284c7"
                 fontSize="8.5"
                 fontFamily="monospace"
                 fontWeight="bold"
@@ -354,35 +318,24 @@ export function Waterfall() {
             </g>
           )}
 
-          {/* Bottom X-Axis Axis Line & Label */}
+          {/* Bottom Time Axis Line */}
           <line
             x1={margin.left}
             y1={margin.top + plotHeight}
             x2={margin.left + plotWidth}
             y2={margin.top + plotHeight}
-            stroke="#334155"
+            stroke="#94a3b8"
             strokeWidth="1"
           />
-          <text
-            x={margin.left + plotWidth / 2}
-            y={margin.top + plotHeight + 30}
-            textAnchor="middle"
-            fill="#94a3b8"
-            fontSize="10"
-            fontFamily="monospace"
-            fontWeight="600"
-          >
-            SIMULATION TIME (t) →
-          </text>
 
-          {/* Empty state message if no ticks yet */}
+          {/* Empty state message */}
           {displayHistory.length === 0 && (
             <text
               x={margin.left + plotWidth / 2}
               y={margin.top + plotHeight / 2}
               textAnchor="middle"
-              fill="#475569"
-              fontSize="12"
+              fill="#64748b"
+              fontSize="11"
               fontFamily="monospace"
             >
               Waiting for simulation start...
@@ -391,90 +344,81 @@ export function Waterfall() {
         </svg>
       </div>
 
-      {/* Explanatory Legend */}
-      <div className="flex flex-wrap items-center justify-between text-xs font-mono text-slate-400 mt-3 pt-2 border-t border-slate-800/80 gap-2">
+      {/* Clean Bottom Legend */}
+      <div className="flex flex-wrap items-center justify-between text-[11px] font-mono text-textSecondary pt-1">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-amber-400 border border-amber-300 inline-block" />
-            <span className="text-slate-300">Simulated Emitter Activity</span>
+            <span className="w-2.5 h-2.5 rounded-sm bg-[#15803d] inline-block" />
+            <span>RF Emission (Dark Green)</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-3.5 h-3.5 rounded-full bg-green-700 border border-green-400 text-white flex items-center justify-center text-[9px] font-bold">
-              ✓
-            </span>
-            <span className="text-slate-300">Receiver HIT</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-[#0284c7] border border-[#0369a1] inline-block" />
+            <span>Detection HIT (Sky Blue ✓)</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-3.5 h-3.5 rounded-full bg-red-900 border border-red-400 text-red-300 flex items-center justify-center text-[8px] font-bold">
-              ✕
-            </span>
-            <span className="text-slate-300">Receiver MISS</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-[#dc2626] border border-[#991b1b] inline-block" />
+            <span>Detection MISS (Red ✕)</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-2 border border-cyan-400 border-dashed inline-block" />
-            <span className="text-slate-300">Current Scan Cursor</span>
+            <span className="w-3 border-t border-[#0284c7] border-dashed inline-block" />
+            <span>Receiver Tune</span>
           </div>
         </div>
-        <div className="text-slate-500 font-mono">
-          Bands: <span className="text-slate-300 font-bold">B0 – B{maxBandIndex}</span> (180 bands)
+        <div className="text-textMuted">
+          Axis: Frequency (B0–B{maxBandIndex}) vs Time (t)
         </div>
       </div>
 
-      {/* Floating Hover Tooltip */}
+      {/* Tooltip HUD */}
       {tooltip && (
         <div
-          className="fixed z-50 pointer-events-none transform -translate-x-1/2 -translate-y-full mb-2 bg-slate-900/95 border border-slate-700 text-slate-100 p-2.5 rounded-md shadow-2xl text-xs font-mono min-w-[200px]"
+          className="fixed z-50 pointer-events-none transform -translate-x-1/2 -translate-y-full mb-2 bg-[#0e1420] border border-borderSubtle text-textPrimary p-2.5 rounded shadow-xl text-xs font-mono min-w-[200px]"
           style={{
             left: `${tooltip.x}px`,
-            top: `${tooltip.y - 8}px`,
+            top: `${tooltip.y - 6}px`,
           }}
         >
-          <div className="flex items-center justify-between border-b border-slate-700 pb-1 mb-1.5 font-bold">
+          <div className="flex items-center justify-between border-b border-borderMuted pb-1 mb-1.5 font-bold">
             <span className="text-accent">Band B{tooltip.band}</span>
-            <span className="text-slate-400">t = {tooltip.time}</span>
+            <span className="text-textMuted">t = {tooltip.time}s</span>
           </div>
 
-          <div className="space-y-1">
+          <div className="space-y-1 text-[11px]">
             <div className="flex justify-between">
-              <span className="text-slate-400">RF Activity:</span>
+              <span className="text-textMuted">Signal:</span>
               {tooltip.activeEmitter ? (
-                <span className="text-amber-400 font-semibold">
-                  ACTIVE ({tooltip.activeEmitter.emitter_id || "Emitter"} ·{" "}
+                <span className="text-green-400 font-medium">
+                  {tooltip.activeEmitter.emitter_id || "Active"} ·{" "}
                   {tooltip.activeEmitter.power_db !== undefined && tooltip.activeEmitter.power_db !== null
                     ? `${tooltip.activeEmitter.power_db} dBm`
-                    : tooltip.activeEmitter.emitter_type || "Signal"}
-                  )
+                    : "Pulse"}
                 </span>
               ) : (
-                <span className="text-slate-500">Idle / Inactive</span>
+                <span className="text-textMuted">Inactive</span>
               )}
             </div>
 
             <div className="flex justify-between">
-              <span className="text-slate-400">Receiver:</span>
-              {tooltip.isScanned ? (
-                <span className="text-slate-200">Scanned</span>
-              ) : (
-                <span className="text-slate-500">Not Scanned</span>
-              )}
+              <span className="text-textMuted">Receiver:</span>
+              <span className="text-textPrimary">{tooltip.isScanned ? "Dwelt" : "Unmonitored"}</span>
             </div>
 
             {tooltip.isScanned && (
               <>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Detection:</span>
+                  <span className="text-textMuted">Detection:</span>
                   {tooltip.detected === true ? (
-                    <span className="text-hit font-bold">HIT (Detected ✓)</span>
+                    <span className="text-success font-semibold">HIT (Intercepted)</span>
                   ) : tooltip.detected === false ? (
-                    <span className="text-miss font-bold">MISS (No Signal ✕)</span>
+                    <span className="text-danger font-semibold">MISS</span>
                   ) : (
-                    <span className="text-slate-400">—</span>
+                    <span className="text-textMuted">—</span>
                   )}
                 </div>
                 {tooltip.measuredPower !== undefined && tooltip.measuredPower !== null && (
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Measured Power:</span>
-                    <span className="text-slate-200">{tooltip.measuredPower} dBm</span>
+                    <span className="text-textMuted">Power:</span>
+                    <span className="text-textPrimary">{tooltip.measuredPower} dBm</span>
                   </div>
                 )}
               </>
