@@ -77,6 +77,8 @@ class SimulationState(BaseModel):
     next_band: Optional[int] = None
     scheduler_reason: Optional[str] = None
     predicted_activity: list[PredictedActivity] = []
+    behavior: Optional[str] = None
+    behavior_confidence: float = 0.0
     metrics: Metrics = Metrics()
     playback_speed: int = 5
     active_emitters: list[ActiveEmitterInfo] = []
@@ -96,6 +98,8 @@ class WSDelta(BaseModel):
     next_band: Optional[int]
     scheduler_reason: Optional[str] = None
     predicted_activity: list[PredictedActivity] = []
+    behavior: Optional[str] = None
+    behavior_confidence: float = 0.0
     metrics: Metrics
     running: bool = True
     completed: bool = False
