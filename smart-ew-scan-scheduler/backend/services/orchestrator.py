@@ -9,8 +9,8 @@ directly anywhere.
 
 GROUND TRUTH ISOLATION: `environment.ground_truth_log` is read ONLY in
 this file's `tick()` method, ONLY to feed `LiveMetricsTracker.update()`
-for evaluation. It is never passed to `scheduler_adapter` or anything
-inside integration/scheduler_adapter.py.
+for evaluation and waterfall visualization. It is never passed to
+`scheduler_adapter` or anything inside integration/scheduler_adapter.py.
 
 ARCHITECTURE NOTE ON "NEXT BAND": the earlier mock-based design showed
 a "next scan" band chosen ahead of when it would actually be scanned.
@@ -85,12 +85,14 @@ class SimulationOrchestrator:
         engine.reset(scenario, self.scheduler_adapter)
 
         # engine.reset() overwrites scenario.num_bands with the real
-        # spectrum's band count -- read it back rather than trusting the
-        # pre-reset value.
+        # spectrum's band count -- read it back rather than trusting
+        # the pre-reset value.
         self.scenario = engine.scenario
         self.playback_speed = getattr(scenario, "playback_speed", 5)
 
-        self.live_metrics = LiveMetricsTracker(scheduler_name=scenario.strategy)
+        self.live_metrics = LiveMetricsTracker(
+            scheduler_name=scenario.strategy
+        )
 
         # "Warm" means the persistent knowledge is not only present,
         # but is compatible with the current Smart ML scenario and can
@@ -116,7 +118,10 @@ class SimulationOrchestrator:
         try:
             self.loaded_prior_knowledge = PersistentKnowledgeStore().load()
         except Exception:
-            logger.warning("Could not load persistent knowledge", exc_info=True)
+            logger.warning(
+                "Could not load persistent knowledge",
+                exc_info=True,
+            )
 
     def _save_completed_run_knowledge(self) -> None:
         """Persist receiver-observation evidence once after duration completion."""
@@ -125,6 +130,7 @@ class SimulationOrchestrator:
 
         try:
             engine = simulation_service.get_simulation_engine()
+
             knowledge = build_knowledge(
                 history_manager=self.scheduler_adapter._hm,
                 current_time=engine.current_time,
@@ -155,7 +161,10 @@ class SimulationOrchestrator:
     def start(self) -> None:
         engine = simulation_service.get_simulation_engine()
 
-        if engine.engine is not None and engine.current_time >= self.scenario.duration:
+        if (
+            engine.engine is not None
+            and engine.current_time >= self.scenario.duration
+        ):
             self.state.running = False
             self.state.completed = True
             return
@@ -166,12 +175,10 @@ class SimulationOrchestrator:
     def pause(self) -> None:
         self.state.running = False
 
-        # BUG FIX: resolve any bursts still open (ground-truth active,
+        # Resolve any bursts still open (ground-truth active,
         # not yet intercepted) so the metrics shown after stopping are
-        # conclusive rather than silently omitting whatever was pending
-        # -- see LiveMetricsTracker.finalize(). Safe to call repeatedly;
-        # if the user resumes afterward and a band goes active again,
-        # a fresh burst simply opens as normal.
+        # conclusive rather than silently omitting whatever was pending.
+        # Safe to call repeatedly.
         if self.live_metrics is not None:
             self.live_metrics.finalize()
             self.state.metrics = simulation_result_to_metrics(
@@ -181,6 +188,9 @@ class SimulationOrchestrator:
     def tick(self) -> WSDelta:
         engine = simulation_service.get_simulation_engine()
 
+        # ------------------------------------------------------------------
+        # Already completed
+        # ------------------------------------------------------------------
         if engine.current_time >= self.scenario.duration:
             self.pause()
             self.state.completed = True
@@ -201,6 +211,8 @@ class SimulationOrchestrator:
                 top_predictions=self.state.predictions,
                 next_band=self.state.next_band,
                 scheduler_reason=self.state.scheduler_reason,
+                behavior=self.state.behavior,
+                behavior_confidence=self.state.behavior_confidence,
                 predicted_activity=self.state.predicted_activity,
                 running=False,
                 completed=True,
@@ -209,10 +221,15 @@ class SimulationOrchestrator:
                 active_emitters=self.state.active_emitters,
             )
 
-        observations = engine.step_once()  # real P1 decision + scan, atomic
+        # ------------------------------------------------------------------
+        # One real P1 simulation decision + scan.
+        # ------------------------------------------------------------------
+        observations = engine.step_once()
 
         environment = engine.environment
 
+        # Ground truth is used ONLY for evaluation.
+        # It never enters the scheduler or predictor.
         for obs in observations:
             gt_records = ground_truth_records_at(
                 environment.ground_truth_log,
@@ -222,10 +239,9 @@ class SimulationOrchestrator:
 
         last_obs = observations[-1]
 
-        # Extract simulated RF environment activity for this tick for
-        # waterfall visualization ONLY.
-        # This ground-truth activity is never passed to the ML predictor
-        # or scheduler.
+        # ------------------------------------------------------------------
+        # Ground truth for visualization ONLY.
+        # ------------------------------------------------------------------
         latest_gt = ground_truth_records_at(
             environment.ground_truth_log,
             last_obs.time,
@@ -242,28 +258,9 @@ class SimulationOrchestrator:
             if r.active and r.band is not None
         ]
 
-        # DURATION ENFORCEMENT (bug fix): P1's SimulationEngine has no
-        # concept of a target run length -- it just runs however many
-        # decisions you call step() for. P3's ScenarioConfig.duration is
-        # therefore enforced entirely on the P3 side, by comparing
-        # against P1's own real clock (`engine.current_time`, the same
-        # value already surfaced to the user as `simulation_time`) after
-        # each decision completes.
-        #
-        # This introduces no second clock: the check only ever reads P1's
-        # existing clock, never advances or substitutes it.
-        #
-        # Because P1's engine can only be observed at decision boundaries
-        # (not modified to preempt mid-decision, which is out of scope),
-        # the actual stop point is the first decision boundary at or after
-        # `duration` raw ticks.
-        #
-        # With the default receiver config (dwell_time=1, tuning_time=0)
-        # this lands exactly at `duration`; a nonzero tuning_time could
-        # overshoot by at most tuning_time + dwell_time - 1 ticks.
-        #
-        # Stopping reuses pause() itself (not a separate code path), so
-        # metrics finalization is identical to a manual /stop.
+        # ------------------------------------------------------------------
+        # Duration enforcement.
+        # ------------------------------------------------------------------
         if engine.current_time >= self.scenario.duration:
             self._save_completed_run_knowledge()
             self.pause()
@@ -271,17 +268,24 @@ class SimulationOrchestrator:
         else:
             self.state.completed = False
 
+        # ------------------------------------------------------------------
+        # Prediction / scheduler information.
+        # ------------------------------------------------------------------
         predictions = self._top_predictions()
         predicted_activity = self._predicted_activity(predictions)
 
-        # Read AFTER the duration check above: if this tick just triggered
-        # pause()'s finalize(), this must reflect the finalized numbers,
-        # not the pre-finalize snapshot.
-        metrics = simulation_result_to_metrics(self.live_metrics.result)
+        # Read AFTER duration check because pause() may have finalized
+        # the metrics for a completed run.
+        metrics = simulation_result_to_metrics(
+            self.live_metrics.result
+        )
 
-        # Update authoritative state (for the /simulation/state REST route)
+        # ------------------------------------------------------------------
+        # Update authoritative state.
+        # ------------------------------------------------------------------
         self.state.simulation_time = last_obs.time
         self.state.current_band = last_obs.scanned_band
+
         self.state.last_observation = ObservationView(
             time=last_obs.time,
             scanned_band=last_obs.scanned_band,
@@ -292,13 +296,38 @@ class SimulationOrchestrator:
         )
 
         self.state.predictions = predictions
-        self.state.next_band = last_obs.scanned_band  # see module docstring
+        self.state.next_band = last_obs.scanned_band
+
         self.state.scheduler_reason = self.scheduler_adapter.last_reason
+
+        # Behavior is diagnostic information supplied by the scheduler
+        # adapter. Use getattr so lightweight test doubles and
+        # non-Smart-ML schedulers remain compatible.
+        self.state.behavior = getattr(
+            self.scheduler_adapter,
+            "last_behavior",
+            None,
+        )
+
+        self.state.behavior_confidence = getattr(
+            self.scheduler_adapter,
+            "last_behavior_confidence",
+            0.0,
+        )
+
         self.state.predicted_activity = predicted_activity
         self.state.metrics = metrics
         self.state.playback_speed = self.playback_speed
         self.state.active_emitters = active_emitters
 
+        # ------------------------------------------------------------------
+        # WebSocket delta.
+        #
+        # IMPORTANT:
+        # Use the authoritative state values above rather than directly
+        # reading optional adapter attributes. This keeps the response
+        # compatible with simple test adapters and all scheduler types.
+        # ------------------------------------------------------------------
         return WSDelta(
             time=last_obs.time,
             current_band=last_obs.scanned_band,
@@ -306,7 +335,9 @@ class SimulationOrchestrator:
             power=last_obs.measured_power_db,
             top_predictions=predictions,
             next_band=last_obs.scanned_band,
-            scheduler_reason=self.scheduler_adapter.last_reason,
+            scheduler_reason=self.state.scheduler_reason,
+            behavior=self.state.behavior,
+            behavior_confidence=self.state.behavior_confidence,
             predicted_activity=predicted_activity,
             running=self.state.running,
             completed=self.state.completed,
@@ -316,8 +347,12 @@ class SimulationOrchestrator:
         )
 
     def _top_predictions(self) -> list[BandPrediction]:
-        preds = self.scheduler_adapter.last_predictions  # {} for non-ML schedulers
-        ranked = sorted(preds.items(), key=lambda kv: kv[1], reverse=True)
+        preds = self.scheduler_adapter.last_predictions
+        ranked = sorted(
+            preds.items(),
+            key=lambda kv: kv[1],
+            reverse=True,
+        )
 
         return [
             BandPrediction(
@@ -337,7 +372,9 @@ class SimulationOrchestrator:
                 band=p.band,
                 probability=p.probability,
             )
-            for i, p in enumerate(predictions[:TOP_K_PREDICTED_ACTIVITY])
+            for i, p in enumerate(
+                predictions[:TOP_K_PREDICTED_ACTIVITY]
+            )
         ]
 
 
@@ -350,26 +387,15 @@ def get_orchestrator() -> SimulationOrchestrator:
     if _orchestrator is None:
         _orchestrator = SimulationOrchestrator()
 
-        # BUG FIX: previously defaulted to "sequential" here, independently
-        # of the frontend's own default ("smart_ml") -- two hardcoded
-        # constants in two places that could (and did) drift apart. The
-        # backend's initial strategy now matches the frontend default.
+        # Backend initial strategy matches the frontend default.
         #
-        # This still cannot perform runtime model training (see
-        # services/prediction_service.py), so if no trained model exists
-        # yet, "smart_ml" is not startable -- in that specific case ONLY,
-        # this falls back to "sequential" for this process, and prints
-        # a clear warning.
-        #
-        # This fallback is never silent to the frontend:
-        # Dashboard.tsx fetches GET /simulation/state once on mount and
-        # reconciles its local scenario (including strategy) to whatever
-        # the backend actually reports, so the two cannot silently
-        # disagree even in the fallback case -- and explicitly requesting
-        # "smart_ml" via /simulation/scenario still returns a clear 409
-        # (see api/simulation_routes.py), never a silent substitution.
+        # This still cannot perform runtime model training, so if no
+        # trained model exists yet, "smart_ml" is not startable -- in
+        # that specific case ONLY, fall back to sequential.
         try:
-            _orchestrator.reset(ScenarioConfig(strategy="smart_ml"))
+            _orchestrator.reset(
+                ScenarioConfig(strategy="smart_ml")
+            )
 
         except PredictorNotAvailableError:
             print(
@@ -381,6 +407,8 @@ def get_orchestrator() -> SimulationOrchestrator:
                 "it automatically on load."
             )
 
-            _orchestrator.reset(ScenarioConfig(strategy="sequential"))
+            _orchestrator.reset(
+                ScenarioConfig(strategy="sequential")
+            )
 
     return _orchestrator

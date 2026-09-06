@@ -69,6 +69,11 @@ export interface WSDelta {
   top_predictions: BandPrediction[];
   next_band: number | null;
   scheduler_reason?: string | null;
+
+  // Phase 7E: behavior intelligence diagnostics.
+  behavior?: string | null;
+  behavior_confidence?: number;
+
   predicted_activity: PredictedActivity[];
   metrics: Metrics;
   running: boolean;

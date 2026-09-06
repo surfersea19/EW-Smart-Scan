@@ -1,5 +1,10 @@
 import { create } from "zustand";
-import type { WSDelta, ScenarioConfig, Metrics, ActiveEmitter } from "../types/simulation";
+import type {
+  WSDelta,
+  ScenarioConfig,
+  Metrics,
+  ActiveEmitter,
+} from "../types/simulation";
 
 export interface HistoryPoint {
   time: number;
@@ -23,6 +28,11 @@ interface SimulationStore {
   predictions: WSDelta["top_predictions"];
   nextBand: number | null;
   schedulerReason: string | null;
+
+  // Phase 7E: behavior intelligence
+  behavior: string | null;
+  behaviorConfidence: number;
+
   predictedActivity: WSDelta["predicted_activity"];
   metrics: Metrics;
   history: HistoryPoint[];
@@ -54,6 +64,7 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
   running: false,
   completed: false,
   knowledgeStatus: "cold",
+
   scenario: {
     num_bands: 180,
     num_emitters: 5,
@@ -65,6 +76,7 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
     model_name: "random_forest",
     playback_speed: 5,
   },
+
   playbackSpeed: 5,
   time: 0,
   currentBand: null,
@@ -73,24 +85,39 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
   predictions: [],
   nextBand: null,
   schedulerReason: null,
+
+  // Phase 7E initial behavior state
+  behavior: null,
+  behaviorConfidence: 0,
+
   predictedActivity: [],
   metrics: emptyMetrics,
   history: [],
   activeEmitters: [],
 
   setConnected: (connected) => set({ connected }),
+
   setRunning: (running) => set({ running }),
+
   setCompleted: (completed) => set({ completed }),
-  setKnowledgeStatus: (knowledgeStatus) => set({ knowledgeStatus }),
+
+  setKnowledgeStatus: (knowledgeStatus) =>
+    set({ knowledgeStatus }),
+
   setScenario: (scenario) =>
     set((state) => ({
       scenario,
-      playbackSpeed: scenario.playback_speed ?? state.playbackSpeed,
+      playbackSpeed:
+        scenario.playback_speed ?? state.playbackSpeed,
     })),
+
   setPlaybackSpeed: (playbackSpeed) =>
     set((state) => ({
       playbackSpeed,
-      scenario: { ...state.scenario, playback_speed: playbackSpeed },
+      scenario: {
+        ...state.scenario,
+        playback_speed: playbackSpeed,
+      },
     })),
 
   applyDelta: (d) =>
@@ -102,12 +129,21 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
       predictions: d.top_predictions,
       nextBand: d.next_band,
       schedulerReason: d.scheduler_reason ?? null,
+
+      // Phase 7E: receive behavior intelligence from backend
+      behavior: d.behavior ?? null,
+      behaviorConfidence: d.behavior_confidence ?? 0,
+
       predictedActivity: d.predicted_activity,
       metrics: d.metrics,
       running: d.running,
-      completed: d.completed ?? (d.time >= state.scenario.duration),
-      playbackSpeed: d.playback_speed ?? state.playbackSpeed,
+      completed:
+        d.completed ??
+        (d.time >= state.scenario.duration),
+      playbackSpeed:
+        d.playback_speed ?? state.playbackSpeed,
       activeEmitters: d.active_emitters ?? [],
+
       history: [
         ...state.history,
         {
@@ -132,6 +168,11 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
       predictions: [],
       nextBand: null,
       schedulerReason: null,
+
+      // Phase 7E: reset behavior intelligence
+      behavior: null,
+      behaviorConfidence: 0,
+
       predictedActivity: [],
       metrics: emptyMetrics,
       activeEmitters: [],
