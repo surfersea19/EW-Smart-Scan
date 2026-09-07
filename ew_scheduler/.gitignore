@@ -14,7 +14,10 @@ dist/
 build/
 
 # Generated ML model files
-backend/prediction/models/saved/
+backend/prediction/models/saved/*
+!backend/prediction/models/saved/logistic.joblib
+!backend/prediction/models/saved/random_forest.joblib
+!backend/prediction/models/saved/xgboost.joblib
 
 # IDE
 .vscode/
