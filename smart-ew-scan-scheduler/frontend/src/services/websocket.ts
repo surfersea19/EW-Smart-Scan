@@ -1,6 +1,7 @@
+/// <reference types="vite/client" />
 import type { WSDelta } from "../types/simulation";
 
-const WS_URL = "ws://localhost:8000/ws/simulation";
+const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws/simulation";
 
 type DeltaHandler = (delta: WSDelta) => void;
 type StatusHandler = (connected: boolean) => void;
