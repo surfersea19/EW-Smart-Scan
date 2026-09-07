@@ -13,9 +13,6 @@
 **/dist/
 **/build/
 
-# Generated ML models
-**/backend/prediction/models/saved/
-
 # IDE
 .vscode/
 
