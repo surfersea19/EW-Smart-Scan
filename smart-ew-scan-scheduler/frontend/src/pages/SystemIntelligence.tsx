@@ -1,42 +1,20 @@
-import { useState } from "react";
-import { PresentationViewerModal } from "../components/PresentationViewerModal";
-
 export function SystemIntelligence() {
-  const [isPresentationOpen, setIsPresentationOpen] = useState<boolean>(false);
-  const [currentSlide, setCurrentSlide] = useState<number>(0);
-
   return (
     <div className="p-6 md:p-12 max-w-[1320px] mx-auto space-y-14 text-textPrimary font-sans">
       {/* ========================================================================= */}
       {/* HERO SECTION — FIRST SUMMARY BOX (APPROVED DESIGN)                        */}
       {/* ========================================================================= */}
       <section className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="text-xs font-mono text-accent uppercase tracking-wider font-semibold">
-              Cognitive Electronic Warfare Technical Briefing
-            </div>
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-textPrimary">
-              SMART SCAN
-            </h1>
-            <p className="text-sm text-textSecondary font-mono">
-              AI-Driven Adaptive Spectrum Surveillance & Scan Scheduling
-            </p>
+        <div className="space-y-1.5">
+          <div className="text-xs font-mono text-accent uppercase tracking-wider font-semibold">
+            Cognitive Electronic Warfare Technical Briefing
           </div>
-
-          {/* In-App Presentation Viewer Modal Trigger */}
-          <div>
-            <button
-              type="button"
-              onClick={() => {
-                setCurrentSlide(0);
-                setIsPresentationOpen(true);
-              }}
-              className="px-4 py-2.5 rounded bg-surface hover:bg-surfaceHover text-textPrimary border border-accent/60 font-mono text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
-            >
-              <span>VIEW PROJECT PRESENTATION — 6 SLIDES</span>
-            </button>
-          </div>
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-textPrimary">
+            SMART SCAN
+          </h1>
+          <p className="text-sm text-textSecondary font-mono">
+            AI-Driven Adaptive Spectrum Surveillance & Scan Scheduling
+          </p>
         </div>
 
         {/* First Summary / Hero Box */}
@@ -504,14 +482,7 @@ export function SystemIntelligence() {
           <strong className="text-textPrimary">SMART SCAN</strong> · AI-Driven Adaptive Spectrum Surveillance
         </div>
       </section>
-
-      {/* In-App Presentation Viewer Modal (renders actual presentation.pptx) */}
-      <PresentationViewerModal
-        isOpen={isPresentationOpen}
-        onClose={() => setIsPresentationOpen(false)}
-        currentSlide={currentSlide}
-        setCurrentSlide={setCurrentSlide}
-      />
     </div>
   );
 }
+
